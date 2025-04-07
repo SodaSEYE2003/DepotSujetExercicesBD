@@ -16,6 +16,7 @@ import {
   Upload,
   FileText,
   Download,
+  Loader2,
 } from "lucide-react"
 import Sidebar from "../../src/components/Sidebar"
 import {
@@ -35,6 +36,7 @@ import { UploadCloud, X } from "lucide-react"
 type UserRole = "professor" | "student"
 
 type Exercise = {
+  id?: string
   title: string
   subtitle: string
   category: string
@@ -42,7 +44,11 @@ type Exercise = {
   date: string
   status: string
   statusClass: string
-  correctionModel?: string // Add this new field
+  correctionModel?: string
+  fileUrl?: string
+  correctionUrl?: string
+  deadline?: string
+  description?: string
 }
 
 export default function ExercisesPage() {
@@ -52,53 +58,13 @@ export default function ExercisesPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
-  const [exercises, setExercises] = useState<Exercise[]>([
-    {
-      title: "Requêtes SQL avancées",
-      subtitle: "Jointures et sous-requêtes",
-      category: "SQL",
-      categoryClass: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300",
-      date: "15 mars 2025",
-      status: "Publié",
-      statusClass: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
-    },
-    {
-      title: "Modélisation de données",
-      subtitle: "Conception de schémas",
-      category: "Modélisation",
-      categoryClass: "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300",
-      date: "10 mars 2025",
-      status: "Brouillon",
-      statusClass: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
-    },
-    {
-      title: "Normalisation et optimisation",
-      subtitle: "Formes normales",
-      category: "Optimisation",
-      categoryClass: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
-      date: "5 mars 2025",
-      status: "Publié",
-      statusClass: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
-    },
-    {
-      title: "Transactions et concurrence",
-      subtitle: "ACID et verrouillage",
-      category: "Avancé",
-      categoryClass: "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300",
-      date: "1 mars 2025",
-      status: "Publié",
-      statusClass: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
-    },
-    {
-      title: "Introduction aux bases NoSQL",
-      subtitle: "MongoDB et Redis",
-      category: "NoSQL",
-      categoryClass: "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300",
-      date: "25 février 2025",
-      status: "Publié",
-      statusClass: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
-    },
-  ])
+  const [exercises, setExercises] = useState<Exercise[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [notification, setNotification] = useState<{
+    type: "success" | "error"
+    message: string
+  } | null>(null)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
@@ -111,7 +77,7 @@ export default function ExercisesPage() {
     subtitle: "",
     category: "",
     deadline: "",
-    correctionModel: "", // Add this new field
+    description: "",
   })
 
   // Ajoutez ces nouveaux états après les états existants
@@ -123,7 +89,7 @@ export default function ExercisesPage() {
     subtitle: "",
     category: "",
     deadline: "",
-    correctionModel: "", // Add this new field
+    description: "",
   })
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
@@ -157,6 +123,77 @@ export default function ExercisesPage() {
       read: true,
     },
   ])
+
+  // Fonction pour afficher une notification
+  const showNotification = (type: "success" | "error", message: string) => {
+    setNotification({ type, message })
+    // Masquer la notification après 5 secondes
+    setTimeout(() => {
+      setNotification(null)
+    }, 5000)
+  }
+
+  // Fetch exercises from backend
+  useEffect(() => {
+    fetchExercises()
+  }, [])
+
+  const fetchExercises = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch("http://localhost:5000/sujets")
+      if (!response.ok) {
+        throw new Error("Erreur lors de la récupération des exercices")
+      }
+      const data = await response.json()
+
+      // Transform backend data to match our frontend format
+      const formattedExercises = data.map((exercise: any) => ({
+        id: exercise._id,
+        title: exercise.titre,
+        subtitle: exercise.sousTitre || "Pas de sous-titre",
+        category: exercise.categorie,
+        categoryClass: getCategoryClass(exercise.categorie),
+        date: new Date(exercise.dateCreation).toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }),
+        status: exercise.statut,
+        statusClass: getStatusClass(exercise.statut),
+        fileUrl: exercise.fichierUrl,
+        correctionUrl: exercise.correctionUrl,
+        deadline: exercise.dateLimite ? new Date(exercise.dateLimite).toISOString().split("T")[0] : "",
+        description: exercise.description || "",
+      }))
+
+      setExercises(formattedExercises)
+    } catch (error) {
+      console.error("Erreur:", error)
+      showNotification("error", "Impossible de charger les exercices. Veuillez réessayer plus tard.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const getCategoryClass = (category: string) => {
+    const categoryMap: Record<string, string> = {
+      SQL: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300",
+      Modélisation: "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300",
+      Optimisation: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
+      Avancé: "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300",
+      NoSQL: "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300",
+    }
+    return categoryMap[category] || "bg-gray-100 dark:bg-gray-900/30 text-gray-800 dark:text-gray-300"
+  }
+
+  const getStatusClass = (status: string) => {
+    const statusMap: Record<string, string> = {
+      Publié: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
+      Brouillon: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
+    }
+    return statusMap[status] || "bg-gray-100 dark:bg-gray-900/30 text-gray-800 dark:text-gray-300"
+  }
 
   // Toggle functions
   const toggleDarkMode = () => {
@@ -237,15 +274,34 @@ export default function ExercisesPage() {
     }
   }, [])
 
+  const validateFileType = (file: File): boolean => {
+    const allowedTypes = ["application/pdf"]
+    if (!allowedTypes.includes(file.type)) {
+      showNotification("error", "Seuls les fichiers PDF sont acceptés")
+      return false
+    }
+    return true
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setUploadedFile(e.target.files[0])
+      const file = e.target.files[0]
+      if (validateFileType(file)) {
+        setUploadedFile(file)
+      } else if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
     }
   }
 
   const handleCorrectionFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setCorrectionFile(e.target.files[0])
+      const file = e.target.files[0]
+      if (validateFileType(file)) {
+        setCorrectionFile(file)
+      } else if (correctionFileInputRef.current) {
+        correctionFileInputRef.current.value = ""
+      }
     }
   }
 
@@ -266,7 +322,10 @@ export default function ExercisesPage() {
     setDragActive(false)
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setUploadedFile(e.dataTransfer.files[0])
+      const file = e.dataTransfer.files[0]
+      if (validateFileType(file)) {
+        setUploadedFile(file)
+      }
     }
   }
 
@@ -315,41 +374,102 @@ export default function ExercisesPage() {
     })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Add a new state for upload progress
+  const [uploadProgress, setUploadProgress] = useState(0)
+
+  // Modify the handleSubmit function to track progress
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Ici, vous pourriez implémenter la logique pour envoyer le fichier et les métadonnées au serveur
-    console.log("Nouvel exercice:", newExercise)
-    console.log("Fichier:", uploadedFile)
-    console.log("Fichier de correction:", correctionFile)
-
-    // Simuler l'ajout d'un nouvel exercice
-    const newExerciseItem = {
-      title: newExercise.title,
-      subtitle: newExercise.subtitle,
-      category: newExercise.category,
-      categoryClass: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300",
-      date: new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }),
-      status: "Brouillon",
-      statusClass: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
-      correctionModel: correctionFile ? correctionFile.name : undefined,
+    if (!uploadedFile) {
+      showNotification("error", "Veuillez sélectionner un fichier d'exercice")
+      return
     }
 
-    setExercises([newExerciseItem, ...exercises])
+    if (!newExercise.title || !newExercise.category) {
+      showNotification("error", "Veuillez remplir tous les champs obligatoires")
+      return
+    }
 
-    // Réinitialiser le formulaire
-    setUploadedFile(null)
-    setCorrectionFile(null)
-    setNewExercise({
-      title: "",
-      subtitle: "",
-      category: "",
-      deadline: "",
-      correctionModel: "",
-    })
+    setIsSubmitting(true)
+    setUploadProgress(0)
 
-    // Fermer la modale
-    setIsModalOpen(false)
+    try {
+      // Créer un FormData pour envoyer les fichiers
+      const formData = new FormData()
+      formData.append("titre", newExercise.title)
+      formData.append("sousTitre", newExercise.subtitle)
+      formData.append("categorie", newExercise.category)
+      formData.append("statut", "Brouillon") // Par défaut, le statut est "Brouillon"
+      formData.append("description", newExercise.description)
+
+      if (newExercise.deadline) {
+        formData.append("dateLimite", new Date(newExercise.deadline).toISOString())
+      }
+
+      // Ajouter le fichier d'exercice
+      formData.append("fichier", uploadedFile)
+
+      // Ajouter le fichier de correction si disponible
+      if (correctionFile) {
+        formData.append("correction", correctionFile)
+      }
+
+      // Use XMLHttpRequest for progress tracking
+      const xhr = new XMLHttpRequest()
+
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100)
+          setUploadProgress(percentComplete)
+        }
+      })
+
+      xhr.addEventListener("load", async () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const data = JSON.parse(xhr.responseText)
+          showNotification("success", "L'exercice a été ajouté avec succès")
+
+          // Réinitialiser le formulaire
+          setUploadedFile(null)
+          setCorrectionFile(null)
+          setNewExercise({
+            title: "",
+            subtitle: "",
+            category: "",
+            deadline: "",
+            description: "",
+          })
+
+          // Fermer la modale
+          setIsModalOpen(false)
+
+          // Rafraîchir la liste des exercices
+          fetchExercises()
+        } else {
+          throw new Error("Erreur lors de l'ajout de l'exercice")
+        }
+        setIsSubmitting(false)
+        setUploadProgress(0)
+      })
+
+      xhr.addEventListener("error", () => {
+        showNotification("error", "Une erreur est survenue lors de l'ajout de l'exercice")
+        setIsSubmitting(false)
+        setUploadProgress(0)
+      })
+
+      xhr.open("POST", "http://localhost:5000/sujets")
+      xhr.send(formData)
+    } catch (error) {
+      console.error("Erreur:", error)
+      showNotification(
+        "error",
+        error instanceof Error ? error.message : "Une erreur est survenue lors de l'ajout de l'exercice",
+      )
+      setIsSubmitting(false)
+      setUploadProgress(0)
+    }
   }
 
   // Ajoutez ces nouvelles fonctions après les fonctions existantes
@@ -363,8 +483,8 @@ export default function ExercisesPage() {
       title: exercise.title,
       subtitle: exercise.subtitle,
       category: exercise.category,
-      deadline: "", // Normalement, vous auriez une date limite dans votre objet Exercise
-      correctionModel: exercise.correctionModel || "", // Add this new field
+      deadline: exercise.deadline || "",
+      description: exercise.description || "",
     })
   }
 
@@ -387,36 +507,86 @@ export default function ExercisesPage() {
     })
   }
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!editExercise) return
 
-    // Mettre à jour l'exercice dans la liste
-    const updatedExercises = exercises.map((ex) =>
-      ex.title === editExercise.title
-        ? {
-            ...ex,
-            title: editFormData.title,
-            subtitle: editFormData.subtitle,
-            category: editFormData.category,
-            correctionModel: editFormData.correctionModel, // Add this new field
-            // Mettre à jour d'autres champs si nécessaire
-          }
-        : ex,
-    )
+    setIsSubmitting(true)
 
-    setExercises(updatedExercises)
-    setEditExercise(null)
+    try {
+      // Créer un FormData pour envoyer les données mises à jour
+      const formData = new FormData()
+      formData.append("titre", editFormData.title)
+      formData.append("sousTitre", editFormData.subtitle)
+      formData.append("categorie", editFormData.category)
+      formData.append("description", editFormData.description)
+
+      if (editFormData.deadline) {
+        formData.append("dateLimite", new Date(editFormData.deadline).toISOString())
+      }
+
+      // Envoyer la requête au backend
+      const response = await fetch(`http://localhost:5000/sujets/${editExercise.id}`, {
+        method: "PUT",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Erreur lors de la modification de l'exercice")
+      }
+
+      showNotification("success", "L'exercice a été modifié avec succès")
+
+      // Fermer la modale
+      setEditExercise(null)
+
+      // Rafraîchir la liste des exercices
+      fetchExercises()
+    } catch (error) {
+      console.error("Erreur:", error)
+      showNotification(
+        "error",
+        error instanceof Error ? error.message : "Une erreur est survenue lors de la modification de l'exercice",
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const confirmDeleteExercise = () => {
+  const confirmDeleteExercise = async () => {
     if (!deleteExercise) return
 
-    // Supprimer l'exercice de la liste
-    const updatedExercises = exercises.filter((ex) => ex.title !== deleteExercise.title)
-    setExercises(updatedExercises)
-    setDeleteExercise(null)
+    setIsSubmitting(true)
+
+    try {
+      // Envoyer la requête au backend
+      const response = await fetch(`http://localhost:5000/sujets/${deleteExercise.id}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Erreur lors de la suppression de l'exercice")
+      }
+
+      showNotification("success", "L'exercice a été supprimé avec succès")
+
+      // Fermer la modale
+      setDeleteExercise(null)
+
+      // Rafraîchir la liste des exercices
+      fetchExercises()
+    } catch (error) {
+      console.error("Erreur:", error)
+      showNotification(
+        "error",
+        error instanceof Error ? error.message : "Une erreur est survenue lors de la suppression de l'exercice",
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   // Function to mark a single notification as read
@@ -428,6 +598,57 @@ export default function ExercisesPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-500">
+      {/* Notification */}
+      {notification && (
+        <div
+          className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg ${
+            notification.type === "success"
+              ? "bg-green-100 border-l-4 border-green-500 text-green-700 dark:bg-green-900/50 dark:text-green-300"
+              : "bg-red-100 border-l-4 border-red-500 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+          }`}
+        >
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              {notification.type === "success" ? (
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              )}
+            </div>
+            <div className="ml-3">
+              <p className="text-sm">{notification.message}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <div className="-mx-1.5 -my-1.5">
+                <button
+                  onClick={() => setNotification(null)}
+                  className={`inline-flex rounded-md p-1.5 ${
+                    notification.type === "success"
+                      ? "text-green-500 hover:bg-green-200 dark:hover:bg-green-800"
+                      : "text-red-500 hover:bg-red-200 dark:hover:bg-red-800"
+                  }`}
+                >
+                  <span className="sr-only">Dismiss</span>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex">
         {/* Sidebar */}
         <Sidebar
@@ -558,7 +779,6 @@ export default function ExercisesPage() {
               </div>
             </div>
           </header>
-
           {/* Page Content */}
           <main className="p-4 md:p-6">
             <div className="animate-fade-in">
@@ -600,19 +820,28 @@ export default function ExercisesPage() {
                   </div>
                 </div>
 
-                {filteredExercises.length === 0 ? (
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                    <span className="ml-2 text-gray-600 dark:text-gray-300">Chargement des exercices...</span>
+                  </div>
+                ) : filteredExercises.length === 0 ? (
                   <div className="text-center py-12">
                     <Search className="w-12 h-12 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
                     <h3 className="text-lg font-medium text-gray-800 dark:text-white mb-2">Aucun exercice trouvé</h3>
                     <p className="text-gray-500 dark:text-gray-400">
-                      Aucun exercice ne correspond à votre recherche "{searchQuery}"
+                      {searchQuery
+                        ? `Aucun exercice ne correspond à votre recherche "${searchQuery}"`
+                        : "Aucun exercice n'est disponible pour le moment"}
                     </p>
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
-                    >
-                      Effacer la recherche
-                    </button>
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                      >
+                        Effacer la recherche
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -666,7 +895,6 @@ export default function ExercisesPage() {
                                   {exercise.status}
                                 </span>
                               </td>
-                              {/* Remplacez le code des boutons d'action dans la table par celui-ci */}
                               <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <button
                                   className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 mr-3"
@@ -769,7 +997,9 @@ export default function ExercisesPage() {
           <form onSubmit={handleSubmit} className="space-y-6 py-4">
             {/* Zone de dépôt de fichier */}
             <div className="space-y-2">
-              <Label htmlFor="file">Fichier d'exercice (PDF)</Label>
+              <Label htmlFor="file">
+                Fichier d'exercice (PDF) <span className="text-red-500">*</span>
+              </Label>
 
               {!uploadedFile ? (
                 <div
@@ -830,7 +1060,9 @@ export default function ExercisesPage() {
 
             {/* Zone de dépôt du modèle de correction */}
             <div className="space-y-2 mt-6">
-              <Label htmlFor="correction-file">Modèle de correction (PDF)</Label>
+              <Label htmlFor="correction-file">
+                Modèle de correction (PDF) <span className="text-gray-500 text-sm">(optionnel)</span>
+              </Label>
 
               {!correctionFile ? (
                 <div
@@ -893,7 +1125,9 @@ export default function ExercisesPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="title">Titre de l'exercice</Label>
+                  <Label htmlFor="title">
+                    Titre de l'exercice <span className="text-red-500">*</span>
+                  </Label>
                   <Input
                     id="title"
                     name="title"
@@ -917,7 +1151,9 @@ export default function ExercisesPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="category">Catégorie</Label>
+                    <Label htmlFor="category">
+                      Catégorie <span className="text-red-500">*</span>
+                    </Label>
                     <Select
                       value={newExercise.category}
                       onValueChange={(value) => handleSelectChange(value, "category")}
@@ -952,6 +1188,8 @@ export default function ExercisesPage() {
                   <Textarea
                     id="description"
                     name="description"
+                    value={newExercise.description}
+                    onChange={handleInputChange}
                     placeholder="Description détaillée de l'exercice..."
                     className="min-h-[100px]"
                   />
@@ -959,20 +1197,41 @@ export default function ExercisesPage() {
               </div>
             </div>
 
+            {isSubmitting && (
+              <div className="mb-4">
+                <Label>Progression de l'upload</Label>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mt-2">
+                  <div
+                    className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-right">{uploadProgress}%</p>
+              </div>
+            )}
+
             <DialogFooter>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg transition-colors mr-2"
+                disabled={isSubmitting}
               >
                 Annuler
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
-                disabled={!uploadedFile || !newExercise.title || !newExercise.category}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center"
+                disabled={isSubmitting || !uploadedFile || !newExercise.title || !newExercise.category}
               >
-                Créer l'exercice
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <span>Création en cours...</span>
+                  </>
+                ) : (
+                  <span>Créer l'exercice</span>
+                )}
               </button>
             </DialogFooter>
           </form>
@@ -1001,18 +1260,25 @@ export default function ExercisesPage() {
             <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30 mb-4">
               <h3 className="text-md font-medium text-gray-800 dark:text-white mb-2">Description</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300">
-                Cet exercice porte sur {viewExercise?.subtitle}. Les étudiants devront démontrer leur compréhension des
-                concepts clés et appliquer leurs connaissances pour résoudre des problèmes pratiques.
+                {viewExercise?.description ||
+                  `Cet exercice porte sur ${viewExercise?.subtitle}. Les étudiants devront démontrer leur compréhension des concepts clés et appliquer leurs connaissances pour résoudre des problèmes pratiques.`}
               </p>
             </div>
 
             <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-md font-medium text-gray-800 dark:text-white">Fichier d'exercice</h3>
-                <button className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 flex items-center">
-                  <Download className="w-4 h-4 mr-1" />
-                  <span className="text-sm">Télécharger</span>
-                </button>
+                {viewExercise?.fileUrl && (
+                  <a
+                    href={viewExercise.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 flex items-center"
+                  >
+                    <Download className="w-4 h-4 mr-1" />
+                    <span className="text-sm">Télécharger</span>
+                  </a>
+                )}
               </div>
 
               <div className="aspect-[16/9] bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center">
@@ -1021,14 +1287,19 @@ export default function ExercisesPage() {
               </div>
             </div>
 
-            {viewExercise?.correctionModel && (
+            {viewExercise?.correctionUrl && (
               <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30 mt-4">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-md font-medium text-gray-800 dark:text-white">Modèle de correction</h3>
-                  <button className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 flex items-center">
+                  <a
+                    href={viewExercise.correctionUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 flex items-center"
+                  >
                     <Download className="w-4 h-4 mr-1" />
                     <span className="text-sm">Télécharger</span>
-                  </button>
+                  </a>
                 </div>
 
                 <div className="aspect-[16/9] bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center">
@@ -1063,7 +1334,9 @@ export default function ExercisesPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-title">Titre de l'exercice</Label>
+                  <Label htmlFor="edit-title">
+                    Titre de l'exercice <span className="text-red-500">*</span>
+                  </Label>
                   <Input
                     id="edit-title"
                     name="title"
@@ -1087,7 +1360,9 @@ export default function ExercisesPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-category">Catégorie</Label>
+                    <Label htmlFor="edit-category">
+                      Catégorie <span className="text-red-500">*</span>
+                    </Label>
                     <Select
                       value={editFormData.category}
                       onValueChange={(value) => handleEditSelectChange(value, "category")}
@@ -1122,6 +1397,8 @@ export default function ExercisesPage() {
                   <Textarea
                     id="edit-description"
                     name="description"
+                    value={editFormData.description}
+                    onChange={handleEditFormChange}
                     placeholder="Description détaillée de l'exercice..."
                     className="min-h-[100px]"
                   />
@@ -1150,13 +1427,13 @@ export default function ExercisesPage() {
 
             <div className="space-y-2 mt-4">
               <Label>Modèle de correction actuel</Label>
-              {editExercise?.correctionModel ? (
+              {editExercise?.correctionUrl ? (
                 <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600">
                   <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
                     <FileText className="w-5 h-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div className="ml-4 flex-1">
-                    <p className="text-sm font-medium text-gray-800 dark:text-white">{editExercise.correctionModel}</p>
+                    <p className="text-sm font-medium text-gray-800 dark:text-white">Modèle de correction</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Remplacer le fichier (optionnel)</p>
                   </div>
                   <button
@@ -1190,14 +1467,23 @@ export default function ExercisesPage() {
                 type="button"
                 onClick={() => setEditExercise(null)}
                 className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg transition-colors mr-2"
+                disabled={isSubmitting}
               >
                 Annuler
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center"
+                disabled={isSubmitting}
               >
-                Enregistrer les modifications
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <span>Enregistrement...</span>
+                  </>
+                ) : (
+                  <span>Enregistrer les modifications</span>
+                )}
               </button>
             </DialogFooter>
           </form>
@@ -1231,15 +1517,24 @@ export default function ExercisesPage() {
               type="button"
               onClick={() => setDeleteExercise(null)}
               className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg transition-colors mr-2"
+              disabled={isSubmitting}
             >
               Annuler
             </button>
             <button
               type="button"
               onClick={confirmDeleteExercise}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"
+              disabled={isSubmitting}
             >
-              Supprimer
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <span>Suppression...</span>
+                </>
+              ) : (
+                <span>Supprimer</span>
+              )}
             </button>
           </DialogFooter>
         </DialogContent>
