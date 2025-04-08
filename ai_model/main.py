@@ -9,6 +9,7 @@ from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List, Optional
 from pydantic import BaseModel
+from io import BytesIO
 
 # Configuration initiale
 app = FastAPI()
@@ -34,7 +35,7 @@ class EvaluationResult(BaseModel):
 
 # Chargement du modèle IA
 try:
-    MODEL_NAME = "deepseek-coder:db-expert"
+    MODEL_NAME = "deepseek-coder"
     ollama.pull(MODEL_NAME)
 except Exception as e:
     print(f"Erreur lors du chargement du modèle: {e}")
@@ -65,7 +66,9 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     try:
         with open(pdf_path, "rb") as file:
             decrypted = decrypt_file(file.read())
-            reader = PdfReader(decrypted)
+            # Convertir les bytes en stream
+            pdf_stream = BytesIO(decrypted)
+            reader = PdfReader(pdf_stream)
             for page in reader.pages:
                 text += page.extract_text()
     except Exception as e:
@@ -79,18 +82,32 @@ def analyze_sql_queries(text: str) -> List[Dict]:
     
     for query in sql_queries:
         try:
-            parsed = sqlparse.parse(query)[0]
-            is_valid = not parsed.is_incomplete
-            tokens = [str(t) for t in parsed.tokens if not t.is_whitespace]
+            parsed = sqlparse.parse(query)
+            if not parsed:
+                continue
+                
+            first_stmt = parsed[0]
+            is_valid = not first_stmt.is_incomplete
+            tokens = [str(t) for t in first_stmt.tokens if not t.is_whitespace]
+            
+            # Détermination du type plus simple
+            query_type = "UNKNOWN"
+            for token in first_stmt.tokens:
+                if token.ttype is None and isinstance(token, sqlparse.sql.Token):
+                    query_type = token.value.upper()
+                    break
+                
         except Exception as e:
+            print(f"Erreur d'analyse SQL: {e}")
             is_valid = False
             tokens = []
+            query_type = "UNKNOWN"
         
         results.append({
             'query': query.strip(),
             'valid': is_valid,
             'tokens': tokens,
-            'type': sqlparse.sql.Statement(query).get_type()
+            'type': query_type
         })
     
     return results
@@ -128,7 +145,7 @@ def parse_ai_response(response: str) -> Dict:
         print(f"Erreur de parsing de la réponse IA: {e}")
         return {
             "score": 0,
-            "errors": ["Format de réponse invalide"],
+            "errors": ["Format de la réponse incorrecte"],
             "correct_answer": "",
             "suggestions": ["Contactez votre professeur"]
         }
@@ -137,6 +154,7 @@ async def evaluate_submission(exercise_data: ExerciseData, student_pdf_path: str
     """Processus complet d'évaluation"""
     # Extraction du texte
     student_answer = extract_text_from_pdf(student_pdf_path)
+    print("réponse de l'étudiant :", student_answer)
     
     # Analyse SQL si pertinent
     sql_analysis = None
@@ -149,7 +167,7 @@ async def evaluate_submission(exercise_data: ExerciseData, student_pdf_path: str
         student_answer,
         exercise_data.correction_guidelines
     )
-    
+    print("prompt généré :", prompt)
     try:
         response = ollama.generate(
             model=MODEL_NAME,
@@ -157,7 +175,7 @@ async def evaluate_submission(exercise_data: ExerciseData, student_pdf_path: str
             format="json",
             options={
                 "temperature": 0.3,  # Plus déterministe
-                "num_ctx": 8192  # Contexte plus long
+                "num_ctx": 4096  # Contexte plus long
             }
         )
         evaluation = parse_ai_response(response["response"])
@@ -194,7 +212,7 @@ async def evaluate(
             prompt="Écrivez une requête SQL qui récupère les clients avec plus de 5 commandes en 2024",
             correction_guidelines="""
             La requête doit:
-            1. Joindre les tables clients et commandes
+            1. Joindre les tables clients et commandes 
             2. Filtrer par année 2024
             3. Grouper par client
             4. Filtrer avec HAVING COUNT > 5

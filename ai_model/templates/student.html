@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Étudiant</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .exercise { background: #f0f8ff; padding: 15px; border-radius: 8px; margin: 15px 0; }
+        textarea { width: 100%; height: 100px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Interface Étudiant</h1>
+    
+    <div class="exercise">
+        <h3>Exercice à résoudre (ID: {{ exercise.id }})</h3>
+        <p>{{ exercise.description }}</p>
+    </div>
+    
+    <form method="post" enctype="multipart/form-data">
+        <p>Soumettez votre réponse en PDF:</p>
+        <input type="file" name="submission" accept=".pdf" required>
+        <button type="submit">Soumettre</button>
+    </form>
+    
+    <a href="/"><button>Retour</button></a>
+</body>
+</html>
