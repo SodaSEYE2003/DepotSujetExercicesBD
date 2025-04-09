@@ -3,16 +3,32 @@
 import { useState, useEffect, useRef } from "react";
 import { Menu, Bell, ChevronDown, Database, BookOpen, TrendingUp, TrendingDown, Users, Award, Calendar } from 'lucide-react';
 import Sidebar from "../../src/components/Sidebar";
+// app/dashboard/page.tsx
+import { useSession } from "next-auth/react";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { redirect } from "next/navigation";
+
 
 type UserRole = 'professor' | 'student';
 
-export default function Dashboard() {
+export default  function Dashboard() {
   // State
+
+ // Utilise useSession pour accéder à la session
+
+ 
+  const { data: session, status } = useSession();
+  if (status === 'unauthenticated') {
+    redirect('/login');
+  }
+  if (!session) {
+    return <div>Loading...</div>; // Affiche quelque chose pendant le chargement de la session
+  }
   const [userRole, setUserRole] = useState<UserRole>('professor');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
-
+ 
   // Toggle functions
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
@@ -94,7 +110,13 @@ export default function Dashboard() {
     // In a real application, you would use a charting library like Chart.js or ApexCharts
   }, []);
 
+  if (!session?.user) {  // Vérification plus stricte
+    redirect("/login");
+  }
+  
   return (
+   
+ 
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-500">
       <div className="flex">
         {/* Sidebar */}
@@ -119,6 +141,9 @@ export default function Dashboard() {
                   <Menu className="w-6 h-6" />
                 </button>
                 <h1 className="text-lg font-semibold text-gray-800 dark:text-white">Tableau de bord</h1>
+                <p>Connecté en tant que: {session.user?.email}</p>
+                <p>Rôle: {session.user?.role}</p>
+ 
               </div>
               
               <div className="flex items-center space-x-3">
