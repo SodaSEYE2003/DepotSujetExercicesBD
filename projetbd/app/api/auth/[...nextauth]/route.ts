@@ -1,44 +1,10 @@
-// app/api/auth/[...nextauth]/route.ts
-import NextAuth, { type NextAuthOptions } from "next-auth";
+import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
-import type { JWT } from "next-auth/jwt";
-import type { Session, User } from "next-auth";
-import { pool } from "@/lib/db";
-import { compare } from "bcryptjs";
-import { type DefaultSession } from "next-auth";
-import type { Account, Profile } from "next-auth";
 
+// Activez le mode debug pour plus d'informations
+const debug = true;
 
-declare module "next-auth" {
-  interface Session extends DefaultSession {
-    user?: {
-      id: string;
-      role: string;
-      matricule?: string;
-      numEtudiant?: string;
-    } & DefaultSession["user"];
-  }
-  interface User {
-    role: string;
-    matricule?: string;  
-    numEtudiant?: string;
-  }
-  
-}
-declare module "next-auth/jwt" {
-  interface JWT {
-    role: string;
-  }
-}
-interface Credentials {
-  email: string;
-  password: string;
-}
-// Configuration MySQL (inchangée)
-
-
-export const authOptions: NextAuthOptions = {
+const handler = NextAuth({
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -46,120 +12,76 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" }
       },
-      async authorize(credentials?:Credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+      async authorize(credentials) {
+        if (debug) console.log("Tentative d'authentification avec:", credentials.email);
+        
         try {
-          const [rows]: any = await pool.query(
-            "SELECT * FROM comptes WHERE email = ?", 
-            [credentials?.email]
-          );
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password
+            })
+          });
           
-          const user = rows[0];
-          if (!user) return null;
-
-          if (credentials.password !== user.password) {
-            console.log("Mot de passe incorrect");
-            return null;
+          const text = await response.text();
+          if (debug) console.log("Réponse API brute:", text);
+          
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            console.error("La réponse n'est pas un JSON valide:", text);
+            throw new Error("Format de réponse invalide");
           }
-          // const isValid = await compare(credentials.password, user.password);
-          // if (!isValid) return null;
-          return {
-            id: user.id.toString(),
-            email: user.email,
-            role: user.role, 
-            ...(user.matricule && { matricule: user.matricule }),
-            ...(user.numEtudiant && { numEtudiant: user.numEtudiant
-            })};
+          
+          if (debug) console.log("Données d'authentification:", data);
+          
+          if (!response.ok) {
+            console.error("Erreur d'authentification:", data);
+            throw new Error(data.message || "Échec de l'authentification");
+          }
+          
+          // ICI EST LE CHANGEMENT IMPORTANT - MODIFICATION DE LA VÉRIFICATION
+          // Les données utilisateur sont déjà au niveau racine, pas besoin de data.user
+          // Retourner directement l'objet data qui contient déjà toutes les infos nécessaires
+          return data;
+          
         } catch (error) {
-          console.error("Erreur d'authentification:", error);
+          console.error("Erreur complète:", error);
           return null;
         }
       }
     }),
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    })
   ],
-  pages: {
-    signIn: "/login",
-    error: "/login"
-  },
-  secret: process.env.NEXTAUTH_SECRET,  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 jours
-    updateAge: 24 * 60 * 60, // Mise à jour quotidienne
-  },
- 
-  // Dans authOptions
-cookies: {
-  sessionToken: {
-    name: process.env.NODE_ENV === 'production' 
-    ? '__Secure-next-auth.session-token' 
-    : 'next-auth.session-token',
-    options: {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      domain: process.env.NODE_ENV === "development" ? "localhost" : undefined,
-      maxAge: 30 * 24 * 60 * 60 // 30 jours
-    },
-  },
-},
-jwt: {
-  secret: process.env.NEXTAUTH_SECRET,
-},
   callbacks: {
-    async signIn({ user, account, profile }){ 
-      if (account?.provider === "google") {
-        try {
-          const [existingUser]: any = await pool.query(
-            "SELECT * FROM comptes WHERE email = ? OR googleId = ?", 
-            [profile?.email, account.providerAccountId]
-          );
-
-          return existingUser.length > 0;
-        } catch (error) {
-          console.error("Erreur Google:", error);
-          return false;
-        }
-      }
-      return true;
-    },
     async jwt({ token, user }) {
       if (user) {
-        return {
-          ...token,
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          matricule: user.matricule,
-          numEtudiant: user.numEtudiant
-        };
+        token.id = user.id;
+        token.email = user.email;
+        token.name = `${user.prenom} ${user.nom}`;
+        token.role = user.role;
+        token.accessToken = user.accessToken;
       }
       return token;
     },
     async session({ session, token }) {
-      return {
-        ...session,
-        user: {
-          ...session.user,
-          id: token.id,
-          email: token.email,
-          role: token.role,
-          matricule: token.matricule,
-          numEtudiant: token.numEtudiant
-        },
-        expires: session.expires
-      };
+      session.user.id = token.id;
+      session.user.role = token.role;
+      session.user.accessToken = token.accessToken;
+      return session;
     }
   },
- 
- 
-};
-console.log("NEXTAUTH_URL:", process.env.NEXTAUTH_URL);
-console.log("NEXTAUTH_SECRET:", process.env.NEXTAUTH_SECRET);
-console.log("Secret loaded:", !!process.env.NEXTAUTH_SECRET);
-const handler = NextAuth(authOptions);
+  pages: {
+    signIn: '/auth/login',
+    error: '/auth/error',
+  },
+  session: {
+    strategy: "jwt",
+  },
+  debug: debug,
+  secret: process.env.NEXTAUTH_SECRET,
+});
+
 export { handler as GET, handler as POST };

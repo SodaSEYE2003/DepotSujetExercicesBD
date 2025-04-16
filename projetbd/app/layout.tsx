@@ -2,8 +2,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SessionProvider } from "next-auth/react"; // Importer SessionProvider
+import { Toaster } from 'react-hot-toast';
 import "./globals.css";
-import  "./RootLayout.tsx";
+//import  "./RootLayout.tsx";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -28,6 +29,7 @@ export default function RootLayout({
         {/* Envelopper les enfants dans le SessionProvider */}
         <SessionProvider>
           {children}
+          <Toaster position="top-right" />
         </SessionProvider>
       </body>
     </html>
