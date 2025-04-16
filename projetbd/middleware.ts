@@ -6,37 +6,60 @@ export async function middleware(req) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   const { pathname } = req.nextUrl;
 
-  // Debug - afficher le token pour vérifier sa structure
-  console.log("Token dans middleware:", pathname, token?.accessToken ? "Token présent" : "Pas de token");
-
-  // Routes qui ne nécessitent pas d'authentification
-  if (pathname.startsWith('/api/auth') || 
-      pathname.startsWith('/_next') || 
-      pathname.includes('.') || 
-      pathname.startsWith('/auth')) {
-    return NextResponse.next();
-  }
+  // Routes publiques qui ne nécessitent pas d'authentification
+  const publicPaths = [
+    '/auth/login',
+    '/auth/register',
+    '/api/auth',
+    '/_next',
+    '/favicon.ico'
+  ];
+  
+  const isPublicPath = publicPaths.some(path => 
+    pathname.startsWith(path) || pathname === '/'
+  );
 
   // Si l'utilisateur n'est pas connecté et essaie d'accéder à une route protégée
-  if (!token && pathname !== '/login' && pathname !== '/register') {
+  if (!token && !isPublicPath) {
     return NextResponse.redirect(new URL('/auth/login', req.url));
   }
 
-  // Si c'est une requête API (mais pas d'auth) et qu'on a un token d'accès
-  if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth') && token?.accessToken) {
-    // Cloner les headers
-    const requestHeaders = new Headers(req.headers);
-    requestHeaders.set('Authorization', `Bearer ${token.accessToken}`);
+  // Redirection basée sur le rôle
+  if (token) {
+    // Si déjà connecté et tente d'accéder aux pages d'auth
+    if (pathname === '/auth/login' || pathname === '/auth/register') {
+      switch (token.role) {
+        case 'etudiant':
+          return NextResponse.redirect(new URL('/etudiant', req.url));
+        case 'professeur':
+          return NextResponse.redirect(new URL('/professeur', req.url));
+        case 'admin':
+          return NextResponse.redirect(new URL('/admin', req.url));
+        default:
+          return NextResponse.redirect(new URL('/', req.url));
+      }
+    }
     
-    // Debug
-    console.log("Ajout du header Authorization pour:", pathname);
+    // Restrictions d'accès basées sur le rôle
+    if (pathname.startsWith('/admin') && token.role !== 'admin') {
+      return NextResponse.redirect(new URL(`/${token.role}`, req.url));
+    }
     
-    // Retourner la requête avec les headers modifiés
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
+    if (pathname.startsWith('/professeur') && token.role !== 'professeur' && token.role !== 'admin') {
+      return NextResponse.redirect(new URL(`/${token.role}`, req.url));
+    }
+    
+    // Ajouter le token JWT pour les appels API
+    if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth') && token?.accessToken) {
+      const requestHeaders = new Headers(req.headers);
+      requestHeaders.set('Authorization', `Bearer ${token.accessToken}`);
+      
+      return NextResponse.next({
+        request: {
+          headers: requestHeaders,
+        },
+      });
+    }
   }
 
   return NextResponse.next();
@@ -46,6 +69,6 @@ export async function middleware(req) {
 export const config = {
   matcher: [
     // Toutes les routes sauf les ressources statiques
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image).*)',
   ],
 };

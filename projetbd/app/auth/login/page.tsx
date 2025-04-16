@@ -1,10 +1,10 @@
 'use client';
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Mail, Lock, ChevronRight } from 'lucide-react';
-// Importez la bibliothèque de toast comme dans la page d'inscription
 import { toast } from 'react-hot-toast';
+import { useEffect } from 'react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -13,36 +13,85 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { data: session, status } = useSession();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    
-    try {
-      const result = await signIn('credentials', {
-        redirect: false,
-        email,
-        password
-      });
+  // Rediriger en fonction du rôle si déjà connecté
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user) {
+      redirectBasedOnRole(session.user.role);
+    }
+  }, [session, status]);
 
-      if (result?.error) {
-        setError(result.error);
-        // Ajoutez un toast pour cohérence avec la page d'inscription
-        toast.error("Échec de la connexion");
-      } else {
-        // Ajoutez un toast pour cohérence avec la page d'inscription
-        toast.success("Connexion réussie");
+  // Fonction pour rediriger en fonction du rôle
+  const redirectBasedOnRole = (role) => {
+    switch (role) {
+      case 'etudiant':
         router.push('/etudiant');
-      }
-    } catch (err) {
-      setError("Une erreur s'est produite lors de la connexion");
-      toast.error("Erreur de connexion");
-    } finally {
-      setIsLoading(false);
+        break;
+      case 'professeur':
+        router.push('/professeur');
+        break;
+      case 'admin':
+        router.push('/admin');
+        break;
+      default:
+        // Rôle inconnu, redirection vers une page par défaut
+        router.push('/');
+        break;
     }
   };
 
+  // Dans votre fonction handleSubmit
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setIsLoading(true);
+  
+  try {
+    const result = await signIn('credentials', {
+      redirect: false,
+      email,
+      password
+    });
+
+    if (result?.error) {
+      setError(result.error);
+      toast.error("Échec de la connexion");
+    } else {
+      toast.success("Connexion réussie");
+      
+      // Récupérer la session pour obtenir le rôle
+      const sessionResponse = await fetch('/api/auth/session');
+      const sessionData = await sessionResponse.json();
+      
+      if (sessionData?.user?.role) {
+        // Redirection basée sur le rôle
+        switch (sessionData.user.role) {
+          case 'etudiant':
+            router.push('/etudiant');
+            break;
+          case 'professeur':
+            router.push('/professeur');
+            break;
+          case 'admin':
+            router.push('/admin');
+            break;
+          default:
+            router.push('/');
+        }
+      } else {
+        router.push('/etudiant'); // Redirection par défaut
+      }
+    }
+  } catch (err) {
+    setError("Une erreur s'est produite lors de la connexion");
+    toast.error("Erreur de connexion");
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  // Le reste du code de votre composant reste inchangé
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">

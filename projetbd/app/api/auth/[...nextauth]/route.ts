@@ -1,9 +1,6 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
-// Activez le mode debug pour plus d'informations
-const debug = true;
-
 const handler = NextAuth({
   providers: [
     CredentialsProvider({
@@ -13,8 +10,6 @@ const handler = NextAuth({
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
-        if (debug) console.log("Tentative d'authentification avec:", credentials.email);
-        
         try {
           const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/auth/login`, {
             method: 'POST',
@@ -24,51 +19,44 @@ const handler = NextAuth({
               password: credentials.password
             })
           });
-          
-          const text = await response.text();
-          if (debug) console.log("Réponse API brute:", text);
-          
-          let data;
-          try {
-            data = JSON.parse(text);
-          } catch (e) {
-            console.error("La réponse n'est pas un JSON valide:", text);
-            throw new Error("Format de réponse invalide");
-          }
-          
-          if (debug) console.log("Données d'authentification:", data);
-          
+
           if (!response.ok) {
-            console.error("Erreur d'authentification:", data);
-            throw new Error(data.message || "Échec de l'authentification");
+            const errorData = await response.json();
+            throw new Error(errorData.message || "Échec de l'authentification");
           }
+
+          // Récupération de la réponse de l'API
+          const userData = await response.json();
           
-          // ICI EST LE CHANGEMENT IMPORTANT - MODIFICATION DE LA VÉRIFICATION
-          // Les données utilisateur sont déjà au niveau racine, pas besoin de data.user
-          // Retourner directement l'objet data qui contient déjà toutes les infos nécessaires
-          return data;
-          
+          // Passation des informations à NextAuth, notamment le rôle
+          return {
+            id: userData.id,
+            email: userData.email,
+            name: `${userData.prenom} ${userData.nom}`,
+            role: userData.role,      // Important pour la gestion des rôles
+            accessToken: userData.accessToken  // Pour les appels API authentifiés
+          };
         } catch (error) {
-          console.error("Erreur complète:", error);
+          console.error("Erreur d'authentification:", error);
           return null;
         }
       }
-    }),
+    })
   ],
   callbacks: {
     async jwt({ token, user }) {
+      // Transfert des informations utilisateur au token JWT
       if (user) {
         token.id = user.id;
-        token.email = user.email;
-        token.name = `${user.prenom} ${user.nom}`;
-        token.role = user.role;
+        token.role = user.role;      // Important: stocke le rôle dans le token
         token.accessToken = user.accessToken;
       }
       return token;
     },
     async session({ session, token }) {
+      // Transfert des informations du token à la session accessible côté client
       session.user.id = token.id;
-      session.user.role = token.role;
+      session.user.role = token.role;  // Important: rend le rôle disponible dans la session
       session.user.accessToken = token.accessToken;
       return session;
     }
@@ -80,7 +68,6 @@ const handler = NextAuth({
   session: {
     strategy: "jwt",
   },
-  debug: debug,
   secret: process.env.NEXTAUTH_SECRET,
 });
 
