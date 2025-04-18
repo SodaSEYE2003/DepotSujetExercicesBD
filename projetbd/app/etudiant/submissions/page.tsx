@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
 import { Menu, Bell, ChevronDown, FileText, Clock, Check, Eye, Download, UploadCloud } from "lucide-react"
-import Sidebar from "../../../src/components/Sidebar-etudiant"
+import Sidebar from "@/components/Sidebar-etudiant";
 import Link from "next/link"
 
 type UserRole = "professor" | "student"

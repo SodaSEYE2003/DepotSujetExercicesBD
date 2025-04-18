@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Menu, Bell, ChevronDown, ChevronLeft, ChevronRight, Plus, Clock, Database, FileText } from "lucide-react"
-import Sidebar from "../../../src/components/Sidebar-etudiant"
+import Sidebar from "@/components/Sidebar-etudiant";
 
 type UserRole = "professor" | "student"
 

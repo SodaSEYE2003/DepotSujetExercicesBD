@@ -3,9 +3,12 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { X, Sun, Moon, LogOut, Database, Home, BookOpen, FileText, BarChart2, Settings, Calendar, TrendingUp } from "lucide-react"
+import { signOut, useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { X, Sun, Moon, LogOut, Database, Home, BookOpen, FileText, BarChart2, Settings, Calendar, TrendingUp, PersonStandingIcon } from "lucide-react"
+import { toast } from 'react-hot-toast'; // Ajout de l'import manquant
 
-type UserRole = "professor" | "student"
+type UserRole = "etudiant" | "professeur" | "admin"
 
 interface SidebarProps {
   userRole: UserRole
@@ -13,22 +16,33 @@ interface SidebarProps {
   toggleDarkMode: () => void
   isSidebarOpen: boolean
   toggleSidebar: () => void
+  onLogout?: () => void // Nouvelle prop pour gérer la déconnexion depuis le parent
 }
 
-export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSidebarOpen, toggleSidebar }: SidebarProps) {
+export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSidebarOpen, toggleSidebar, onLogout }: SidebarProps) {
   const pathname = usePathname()
+  const router = useRouter();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const { data: session, status } = useSession();
+
+  
+    // Rediriger si l'utilisateur n'est pas connecté
+    useEffect(() => {
+      if (status === 'unauthenticated') {
+        router.push('/auth/login');
+      }
+    }, [status, router]);
+  
 
   const navigationItems = [
     { id: "dashboard", name: "Tableau de bord", icon: Home, path: "/etudiant" },
     { id: "exercises", name: "Exercices", icon: BookOpen, path: "/etudiant/exercices" },
     { 
       id: "submissions", 
-      name: "Mes soumissions",  // Changé pour l'étudiant
+      name: "Mes soumissions",
       icon: FileText, 
       path: "/etudiant/submissions" 
     },
-    // Ajout de l'onglet progression
     { id: "progress", name: "Ma progression", icon: TrendingUp, path: "/etudiant/progress" },
     { id: "calendar", name: "Calendrier", icon: Calendar, path: "/etudiant/calendar" },
     { id: "settings", name: "Paramètres", icon: Settings, path: "/etudiant/settings" },
@@ -52,11 +66,29 @@ export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSideba
     }
   }, [showLogoutConfirm])
 
-  const handleLogout = () => {
-    // Implement actual logout logic here
-    console.log("Déconnexion...")
-    // For example: router.push('/login');
-  }
+  const handleLogout = async () => {
+    try {
+      // Afficher un toast avant la déconnexion (optionnel)
+      toast.loading('Déconnexion en cours...', { id: 'logout' });
+      
+      // Déconnecter l'utilisateur
+      await signOut({ 
+        redirect: false,
+        callbackUrl: '/auth/login'
+      });
+      
+      // Afficher un message de succès
+      toast.success('Vous êtes déconnecté', { id: 'logout' });
+      
+      // Rediriger vers la page de connexion
+      // Notez que cette redirection est déjà gérée par NextAuth si vous utilisez { redirect: true }
+      window.location.href = '/auth/login';
+    } catch (error) {
+      // Gérer toute erreur qui pourrait survenir
+      console.error('Erreur lors de la déconnexion:', error);
+      toast.error('Un problème est survenu lors de la déconnexion', { id: 'logout' });
+    }
+  };
 
   return (
     <div
@@ -83,19 +115,16 @@ export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSideba
         <div className="px-4 mb-6">
           <div className="flex items-center space-x-3">
             <div className="relative">
-              <img
-                src="https://i.pravatar.cc/40?img=8"
-                alt="Avatar"
-                className="w-10 h-10 rounded-full border-2 border-indigo-500"
-              />
+              <PersonStandingIcon  className="w-10 h-10 rounded-full border-2 border-indigo-500"/>
+                   
               <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-800 dark:text-white">
-                {userRole === "professor" ? "Prof. Sarah Martin" : "Étudiant Thomas Dubois"}
+            <p className="text-sm font-medium text-gray-800 dark:text-white">
+                {session?.user?.email}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                {userRole === "professor" ? "Professeur" : "Étudiant"}
+                {session?.user?.role}
               </p>
             </div>
           </div>
@@ -167,4 +196,3 @@ export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSideba
     </div>
   )
 }
-

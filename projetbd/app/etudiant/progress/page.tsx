@@ -22,7 +22,7 @@ import {
   Award,
   Calendar
 } from "lucide-react"
-import Sidebar from "../../../src/components/Sidebar-etudiant"
+import Sidebar from "@/components/Sidebar-etudiant";
 
 type UserRole = 'professor' | 'student'
 

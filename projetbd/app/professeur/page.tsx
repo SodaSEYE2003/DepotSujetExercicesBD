@@ -141,8 +141,7 @@ export default  function Dashboard() {
                   <Menu className="w-6 h-6" />
                 </button>
                 <h1 className="text-lg font-semibold text-gray-800 dark:text-white">Tableau de bord</h1>
-                <p>Connecté en tant que: {session.user?.email}</p>
-                <p>Rôle: {session.user?.role}</p>
+                
  
               </div>
               
@@ -168,7 +167,7 @@ export default  function Dashboard() {
             <div className="animate-fade-in">
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 mb-6 border border-gray-100 dark:border-gray-700">
                 <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
-                  Bienvenue, {userRole === 'professor' ? 'Prof. Sarah' : 'Thomas'} 👋
+                  Bienvenue, {session.user?.name} 👋
                 </h2>
                 <p className="text-gray-600 dark:text-gray-300">
                   {userRole === 'professor' 

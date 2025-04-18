@@ -1,0 +1,99 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       Int
+  expires      DateTime
+  user         Utilisateur @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+model Utilisateur {
+  id                Int               @id @default(autoincrement())
+  email             String            @unique
+  password          String
+  nom               String
+  prenom            String
+  Num_Etudiant      String?
+  Matricule         String?
+  date_creation     DateTime          @default(now())
+  derniere_connexion DateTime?
+  actif             Boolean           @default(true)
+  notes             Note[]
+  soumissions       Soumission[]
+  roles             UtilisateurRole[]
+  sessions        Session[]
+
+  @@index([email], name: "idx_utilisateurs_email")
+}
+
+model Role {
+  id          Int               @id @default(autoincrement())
+  nom         String            @unique
+  description String?
+  utilisateurs UtilisateurRole[]
+}
+
+model UtilisateurRole {
+  utilisateur    Utilisateur @relation(fields: [utilisateur_id], references: [id], onDelete: Cascade)
+  utilisateur_id Int
+  role           Role        @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  role_id        Int
+
+  @@id([utilisateur_id, role_id])
+  @@index([utilisateur_id, role_id], name: "idx_user_roles")
+}
+
+model Sujet {
+  id           Int         @id @default(autoincrement())
+  TypeDeSujet  String
+  DateDeDepot  DateTime    @db.Date
+  Delai        DateTime    @db.Date
+  file         Bytes?      @db.LongBlob
+  Titre        String?     @db.VarChar(255)
+  correctionUrl Bytes?     @db.LongBlob
+  Description  String?     @db.Text
+  sousTitre    String?     @db.VarChar(255)
+  status       SujetStatus @default(brouillon)
+  notes        Note[]
+  soumissions  Soumission[]
+}
+
+enum SujetStatus {
+  brouillon
+  Publié
+}
+
+model Note {
+  id          Int        @id @default(autoincrement())
+  etudiant    Utilisateur @relation(fields: [etudiant_id], references: [id], onDelete: Cascade)
+  etudiant_id Int
+  sujet       Sujet      @relation(fields: [sujet_id], references: [id], onDelete: Cascade)
+  sujet_id    Int
+  Note        Decimal    @db.Decimal(5, 2)
+
+  @@index([etudiant_id], name: "etudiant_id")
+  @@index([sujet_id], name: "sujet_id")
+}
+
+model Soumission {
+  id             Int        @id @default(autoincrement())
+  fichier        Bytes?     @db.LongBlob
+  etudiant       Utilisateur? @relation(fields: [etudiant_id], references: [id], onDelete: SetNull)
+  etudiant_id    Int?
+  sujet          Sujet?     @relation(fields: [sujet_id], references: [id], onDelete: SetNull)
+  sujet_id       Int?
+  commentaire    String?    @db.Text
+  dateSoumission DateTime   @default(now())
+
+  @@index([etudiant_id], name: "etudiant_id")
+  @@index([sujet_id], name: "sujet_id")
+}

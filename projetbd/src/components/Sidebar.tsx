@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { signOut, useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'react-hot-toast';
 import { usePathname } from "next/navigation"
 import { X, Sun, Moon, LogOut, Database, Home, BookOpen, FileText, BarChart2, Settings, Calendar } from "lucide-react"
 
@@ -18,6 +21,7 @@ interface SidebarProps {
 export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSidebarOpen, toggleSidebar }: SidebarProps) {
   const pathname = usePathname()
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const { data: session, status } = useSession();
 
   const navigationItems = [
     { id: "dashboard", name: "Tableau de bord", icon: Home, path: "/dashboard" },
@@ -51,11 +55,29 @@ export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSideba
     }
   }, [showLogoutConfirm])
 
-  const handleLogout = () => {
-    // Implement actual logout logic here
-    console.log("Déconnexion...")
-    // For example: router.push('/login');
-  }
+  const handleLogout = async () => {
+    try {
+      // Afficher un toast avant la déconnexion (optionnel)
+      toast.loading('Déconnexion en cours...', { id: 'logout' });
+      
+      // Déconnecter l'utilisateur
+      await signOut({ 
+        redirect: false,
+        callbackUrl: '/auth/login'
+      });
+      
+      // Afficher un message de succès
+      toast.success('Vous êtes déconnecté', { id: 'logout' });
+      
+      // Rediriger vers la page de connexion
+      // Notez que cette redirection est déjà gérée par NextAuth si vous utilisez { redirect: true }
+      window.location.href = '/auth/login';
+    } catch (error) {
+      // Gérer toute erreur qui pourrait survenir
+      console.error('Erreur lors de la déconnexion:', error);
+      toast.error('Un problème est survenu lors de la déconnexion', { id: 'logout' });
+    }
+  };
 
   return (
     <div
@@ -91,10 +113,10 @@ export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSideba
             </div>
             <div>
               <p className="text-sm font-medium text-gray-800 dark:text-white">
-                {userRole === "professor" ? "Prof. Sarah Martin" : "Étudiant Thomas Dubois"}
+                {session?.user?.email}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                {userRole === "professor" ? "Professeur" : "Étudiant"}
+                {session?.user?.role}
               </p>
             </div>
           </div>

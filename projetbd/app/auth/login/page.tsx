@@ -1,10 +1,11 @@
 'use client';
-import { useState } from 'react';
-import { signIn, useSession } from 'next-auth/react';
+
+import { useState, useEffect } from 'react';
+import { signIn, useSession, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Mail, Lock, ChevronRight } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -12,86 +13,163 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState({ redirected: false, timestamp: '', role: '' });
   const router = useRouter();
   const { data: session, status } = useSession();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  
+  // Récupérer callbackUrl des paramètres d'URL
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get('callbackUrl') || '/';
 
-  // Rediriger en fonction du rôle si déjà connecté
-  useEffect(() => {
-    if (status === 'authenticated' && session?.user) {
-      redirectBasedOnRole(session.user.role);
+ // Rediriger si déjà authentifié (only when the page loads)
+useEffect(() => {
+  if (status === 'authenticated' && session?.user?.role) {
+    console.log("[LOGIN] Already authenticated user detected, preparing to redirect");
+    console.log("[LOGIN] User role:", session.user.role);
+    
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+    
+    setDebugInfo({
+      redirected: true,
+      timestamp: timestamp,
+      role: session.user.role
+    });
+    
+    // Only redirect if not already on a role-specific page
+    const currentPath = window.location.pathname;
+    const isOnRolePage = 
+      (session.user.role === 'etudiant' && currentPath.startsWith('/etudiant')) ||
+      (session.user.role === 'professeur' && currentPath.startsWith('/professeur')) ||
+      (session.user.role === 'admin' && currentPath.startsWith('/admin'));
+    
+    if (!isOnRolePage) {
+      let redirectPath = '/';
+      
+      switch (session.user.role) {
+        case 'etudiant':
+          redirectPath = '/etudiant';
+          break;
+        case 'professeur':
+          redirectPath = '/professeur';
+          break;
+        case 'admin':
+          redirectPath = '/admin';
+          break;
+      }
+      
+      console.log("[LOGIN] Redirecting already authenticated user to:", redirectPath);
+      window.location.href = redirectPath;
     }
-  }, [session, status]);
-
-  // Fonction pour rediriger en fonction du rôle
+  }
+}, []); // Only run once on mount
+  // Fonction de redirection basée sur le rôle
   const redirectBasedOnRole = (role) => {
-    switch (role) {
-      case 'etudiant':
-        router.push('/etudiant');
-        break;
-      case 'professeur':
-        router.push('/professeur');
-        break;
-      case 'admin':
-        router.push('/admin');
-        break;
-      default:
-        // Rôle inconnu, redirection vers une page par défaut
-        router.push('/');
-        break;
+    console.log("[LOGIN] Redirecting based on role:", role);
+    
+    if (callbackUrl && callbackUrl !== '/auth/login') {
+      console.log("[LOGIN] Redirecting to callback URL:", callbackUrl);
+      router.push(callbackUrl);
+    } else {
+      // Sinon, rediriger en fonction du rôle
+      let redirectPath = '/';
+      
+      switch (role) {
+        case 'etudiant':
+          redirectPath = '/etudiant';
+          break;
+        case 'professeur':
+          redirectPath = '/professeur';
+          break;
+        case 'admin':
+          redirectPath = '/admin';
+          break;
+        default:
+          redirectPath = '/';
+          break;
+      }
+      
+      console.log("[LOGIN] Redirecting to role-based path:", redirectPath);
+      toast.success(`Redirection vers ${redirectPath}`);
+      router.push(redirectPath);
     }
   };
 
-  // Dans votre fonction handleSubmit
+ // Modify your handleSubmit function
 const handleSubmit = async (e) => {
   e.preventDefault();
   setIsLoading(true);
+  setError('');
   
   try {
+    console.log("[LOGIN] Submitting credentials with email:", email);
+    
+    // Calculate the correct callback URL based on role or provided URL
+    let effectiveCallbackUrl = '/etudiant'; // Default to student dashboard
+    
+    // If there's a valid callback URL from params, use it
+    if (callbackUrl && !callbackUrl.includes('/auth/login')) {
+      effectiveCallbackUrl = callbackUrl;
+    }
+    
+    console.log("[LOGIN] Using callback URL:", effectiveCallbackUrl);
+    
     const result = await signIn('credentials', {
       redirect: false,
       email,
-      password
+      password,
+      callbackUrl: effectiveCallbackUrl, // Set explicit callback URL here
     });
 
     if (result?.error) {
+      console.error("[LOGIN] Sign-in error:", result.error);
       setError(result.error);
       toast.error("Échec de la connexion");
     } else {
       toast.success("Connexion réussie");
       
-      // Récupérer la session pour obtenir le rôle
-      const sessionResponse = await fetch('/api/auth/session');
-      const sessionData = await sessionResponse.json();
-      
-      if (sessionData?.user?.role) {
-        // Redirection basée sur le rôle
-        switch (sessionData.user.role) {
-          case 'etudiant':
-            router.push('/etudiant');
-            break;
-          case 'professeur':
-            router.push('/professeur');
-            break;
-          case 'admin':
-            router.push('/admin');
-            break;
-          default:
-            router.push('/');
+      // Wait for session to be updated and then redirect
+      setTimeout(async () => {
+        try {
+          const updatedSession = await getSession();
+          console.log("[LOGIN] Updated session after login:", updatedSession);
+          
+          // Determine redirect URL based on role
+          let redirectUrl = '/etudiant'; // Default
+          
+          if (updatedSession?.user?.role) {
+            switch (updatedSession.user.role) {
+              case 'etudiant':
+                redirectUrl = '/etudiant';
+                break;
+              case 'professeur':
+                redirectUrl = '/professeur';
+                break;
+              case 'admin':
+                redirectUrl = '/admin';
+                break;
+            }
+          }
+          
+          console.log("[LOGIN] Explicitly redirecting to:", redirectUrl);
+          
+          // Force redirect with replace to avoid history issues
+          window.location.href = redirectUrl;
+        } catch (error) {
+          console.error("[LOGIN] Session or redirect error:", error);
+          // Fallback to safe redirect
+          window.location.href = '/etudiant';
         }
-      } else {
-        router.push('/etudiant'); // Redirection par défaut
-      }
+      }, 1000);
     }
   } catch (err) {
+    console.error("[LOGIN] Error during sign-in:", err);
     setError("Une erreur s'est produite lors de la connexion");
     toast.error("Erreur de connexion");
   } finally {
     setIsLoading(false);
   }
 };
-
-  // Le reste du code de votre composant reste inchangé
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
@@ -101,6 +179,20 @@ const handleSubmit = async (e) => {
         </div>
         
         <div className="p-6">
+          {/* Informations de débogage */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mb-4 p-2 bg-gray-100 rounded text-xs">
+              <p><strong>Session Status:</strong> {status}</p>
+              <p><strong>User Email:</strong> {session?.user?.email || 'None'}</p>
+              <p><strong>User Role:</strong> {session?.user?.role || 'None'}</p>
+              {debugInfo.redirected && (
+                <p className="text-green-600">
+                  Redirected at {debugInfo.timestamp} with role: {debugInfo.role}
+                </p>
+              )}
+            </div>
+          )}
+          
           {error && (
             <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded">
               <div className="flex items-center">
@@ -210,7 +302,10 @@ const handleSubmit = async (e) => {
             <div className="mt-4">
               <button
                 type="button"
-                onClick={() => signIn('google')}
+                onClick={() => {
+                  console.log("[LOGIN] Google sign-in initiated");
+                  signIn('google', { callbackUrl });
+                }}
                 className="w-full flex items-center justify-center py-2.5 px-4 border border-gray-300 rounded-md shadow-sm bg-white hover:bg-gray-50 transition"
               >
                 <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">

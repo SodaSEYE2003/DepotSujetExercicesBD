@@ -1,74 +1,95 @@
+import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { NextResponse } from 'next/server';
 
-export async function middleware(req) {
-  // Obtenir le token depuis la session NextAuth
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-  const { pathname } = req.nextUrl;
-
-  // Routes publiques qui ne nécessitent pas d'authentification
-  const publicPaths = [
-    '/auth/login',
-    '/auth/register',
-    '/api/auth',
-    '/_next',
-    '/favicon.ico'
-  ];
-  
-  const isPublicPath = publicPaths.some(path => 
-    pathname.startsWith(path) || pathname === '/'
-  );
-
-  // Si l'utilisateur n'est pas connecté et essaie d'accéder à une route protégée
-  if (!token && !isPublicPath) {
-    return NextResponse.redirect(new URL('/auth/login', req.url));
-  }
-
-  // Redirection basée sur le rôle
-  if (token) {
-    // Si déjà connecté et tente d'accéder aux pages d'auth
-    if (pathname === '/auth/login' || pathname === '/auth/register') {
-      switch (token.role) {
-        case 'etudiant':
-          return NextResponse.redirect(new URL('/etudiant', req.url));
-        case 'professeur':
-          return NextResponse.redirect(new URL('/professeur', req.url));
-        case 'admin':
-          return NextResponse.redirect(new URL('/admin', req.url));
-        default:
-          return NextResponse.redirect(new URL('/', req.url));
+export async function middleware(request: NextRequest) {
+  try {
+    const { pathname} = request.nextUrl;
+    console.log(`[MIDDLEWARE]  ${pathname}`);
+    
+    // Check if it's a static resource
+    if (
+      pathname.startsWith('/_next') || 
+      pathname.match(/\.(jpg|jpeg|png|gif|svg|ico|css|js)$/)
+    ) {
+      return NextResponse.next();
+    }
+    
+    // Allow public API routes
+    if (pathname.startsWith('/api/auth')) {
+      console.log("[MIDDLEWARE] Auth API route, allowing");
+      return NextResponse.next();
+    }
+    
+    
+    // Public routes anyone can access
+    const publicRoutes = [
+      '/auth/login', 
+      '/auth/register', 
+      '/auth/error',
+      '/auth/reset-password', 
+      '/auth/forgot-password'
+    ];
+    
+    if (publicRoutes.includes(pathname)) {
+      console.log("[MIDDLEWARE] Public route, allowing");
+      return NextResponse.next();
+    }
+    
+    // Get the token to check authentication
+    const token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET 
+    });
+    
+    const isLoggedIn = !!token;
+    console.log("[MIDDLEWARE] User is logged in:", isLoggedIn, "Path:", pathname);
+    
+    // If user is not logged in and trying to access a protected route
+    if (!isLoggedIn) {
+      console.log("[MIDDLEWARE] Not authenticated, redirecting to login");
+      const url = new URL('/auth/login', request.url);
+      url.searchParams.set('callbackUrl', pathname);
+      return NextResponse.redirect(url);
+    }
+    
+    // Role-based route protection
+    if (token?.role) {
+      // Define role-specific paths
+      const professorPaths = ['/professeur'];
+      const studentPaths = ['/etudiant'];
+      const adminPaths = ['/admin'];
+      
+      // Check if the user is trying to access a path that doesn't match their role
+      if (
+        (token.role !== 'professeur' && professorPaths.some(path => pathname.startsWith(path))) ||
+        (token.role !== 'etudiant' && studentPaths.some(path => pathname.startsWith(path))) ||
+        (token.role !== 'admin' && adminPaths.some(path => pathname.startsWith(path)))
+      ) {
+        console.log("[MIDDLEWARE] User role", token.role, "doesn't match path", pathname);
+        
+        // Redirect to appropriate path based on role
+        let redirectPath = '/';
+        switch (token.role) {
+          case 'etudiant':
+            redirectPath = '/etudiant';
+            break;
+          case 'professeur':
+            redirectPath = '/professeur';
+            break;
+          case 'admin':
+            redirectPath = '/admin';
+            break;
+        }
+        
+        console.log("[MIDDLEWARE] Redirecting to role-appropriate path:", redirectPath);
+        return NextResponse.redirect(new URL(redirectPath, request.url));
       }
     }
     
-    // Restrictions d'accès basées sur le rôle
-    if (pathname.startsWith('/admin') && token.role !== 'admin') {
-      return NextResponse.redirect(new URL(`/${token.role}`, req.url));
-    }
-    
-    if (pathname.startsWith('/professeur') && token.role !== 'professeur' && token.role !== 'admin') {
-      return NextResponse.redirect(new URL(`/${token.role}`, req.url));
-    }
-    
-    // Ajouter le token JWT pour les appels API
-    if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth') && token?.accessToken) {
-      const requestHeaders = new Headers(req.headers);
-      requestHeaders.set('Authorization', `Bearer ${token.accessToken}`);
-      
-      return NextResponse.next({
-        request: {
-          headers: requestHeaders,
-        },
-      });
-    }
+    // If nothing else matched, allow the request
+    return NextResponse.next();
+  } catch (error) {
+    console.error("[MIDDLEWARE] Error:", error);
+    return NextResponse.redirect(new URL('/auth/login', request.url));
   }
-
-  return NextResponse.next();
 }
-
-// Configurer les routes où le middleware sera appliqué
-export const config = {
-  matcher: [
-    // Toutes les routes sauf les ressources statiques
-    '/((?!_next/static|_next/image).*)',
-  ],
-};
