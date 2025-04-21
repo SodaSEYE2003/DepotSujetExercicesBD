@@ -1,282 +1,263 @@
-'use server'
+// src/actions/etudiant.ts
+"use server";
 
-import { PrismaClient } from '@prisma/client'
-import { getCurrentUser } from '@/lib/auth'
-import { revalidatePath } from 'next/cache'
-import { getSession } from '@/lib/auth'
+import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
 
-const prisma = new PrismaClient()
-
-// Get user stats for the dashboard
-export async function getUserStats() {
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error('Non authentifié')
-  }
-
-  const userId = user.id
-  
-  // Get exercises completed
-  const exercicesCompletes = await prisma.soumission.count({
-    where: {
-      etudiant_id: userId,
-    }
-  })
-  
-  // Get exercises in progress (Sujets assigned to user but not yet submitted)
-  const exercicesEnCours = await prisma.sujet.count({
-    where: {
-      status: 'Publié',
-      soumissions: {
-        none: {
-          etudiant_id: userId
-        }
-      }
-    }
-  })
-  
-  // Calculate average grade
-  const notesResult = await prisma.note.aggregate({
-    where: {
-      etudiant_id: userId
-    },
-    _avg: {
-      Note: true
-    }
-  })
-  const noteMoyenne = notesResult._avg.Note || 0
-  
-  // Get class rank (this is more complex and depends on how you want to calculate it)
-  // This is a simplified example
-  const allStudentAverages = await prisma.$queryRaw`
-    SELECT etudiant_id, AVG(Note) as average 
-    FROM Note 
-    GROUP BY etudiant_id 
-    ORDER BY average DESC
-  `
-  
-  // Find the user's position in the ranking
-  const totalStudents = (allStudentAverages as any[]).length
-  let rank = 0
-  for (let i = 0; i < (allStudentAverages as any[]).length; i++) {
-    if ((allStudentAverages as any[])[i].etudiant_id === userId) {
-      rank = i + 1
-      break
-    }
-  }
-  
-  // Revalidate the dashboard path to ensure fresh data
-  revalidatePath('/etudiant')
-  
-  return {
-    exercicesCompletes,
-    exercicesEnCours,
-    noteMoyenne: noteMoyenne.toFixed(1),
-    rangClasse: `${rank}/${totalStudents}`
+/**
+ * Vérifie que l'ID utilisateur est valide
+ */
+function validateUserId(userId: number) {
+  if (!userId || isNaN(userId)) {
+    throw new Error("ID utilisateur invalide");
   }
 }
 
-// Get recent exercises
-export async function getRecentExercises() {
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error('Non authentifié')
-  }
+/**
+ * Récupère les statistiques de l'étudiant
+ */
+export async function getEtudiantStats(userId: number) {
+  try {
+    validateUserId(userId);
 
-  const userId = user.id
-  const userRole = user.role
-  
-  let exercises
-  
-  if (userRole === 'professeur') {
-    // If professor, get recent exercises created
-    exercises = await prisma.sujet.findMany({
-      orderBy: {
-        DateDeDepot: 'desc'
-      },
-      take: 3
-    })
-    
-    return exercises.map(ex => ({
-      title: ex.Titre || 'Sans titre',
-      status: ex.status,
-      date: ex.DateDeDepot.toLocaleDateString('fr-FR'),
-      id: ex.id
-    }))
-  } else {
-    // If student, get assigned exercises with submission status
-    const sujets = await prisma.sujet.findMany({
-      where: {
-        status: 'Publié'
-      },
-      orderBy: {
-        DateDeDepot: 'desc'
-      },
-      include: {
-        soumissions: {
-          where: {
-            etudiant_id: userId
-          }
+    // Récupération en parallèle des données
+    const [exercicesCompletes, tousLesSujets, notes, etudiants] = await Promise.all([
+      prisma.soumission.count({ where: { etudiant_id: userId } }),
+      prisma.sujet.count({ where: { status: "Publié" } }),
+      prisma.note.findMany({ 
+        where: { etudiant_id: userId },
+        select: { Note: true }
+      }),
+      prisma.utilisateur.findMany({
+        where: {
+          roles: { some: { role: { nom: "etudiant" } } }
+        },
+        include: {
+          notes: { select: { Note: true } }
         }
-      },
-      take: 3
-    })
-    
+      })
+    ]);
+
+    const exercicesEnCours = tousLesSujets - exercicesCompletes;
+    const noteMoyenne = notes.length > 0 
+      ? notes.reduce((acc, curr) => acc + Number(curr.Note), 0) / notes.length
+      : 0;
+
+    // Calcul du rang
+    const etudiantsAvecMoyenne = etudiants.map(etudiant => ({
+      id: etudiant.id,
+      moyenne: etudiant.notes.length > 0
+        ? etudiant.notes.reduce((acc, curr) => acc + Number(curr.Note), 0) / etudiant.notes.length
+        : 0
+    })).sort((a, b) => b.moyenne - a.moyenne);
+
+    const rang = etudiantsAvecMoyenne.findIndex(e => e.id === userId) + 1;
+    const notesReussies = notes.filter(note => Number(note.Note) >= 10).length;
+
+    return {
+      exercicesCompletes,
+      exercicesEnCours,
+      noteMoyenne,
+      rang,
+      totalEtudiants: etudiantsAvecMoyenne.length,
+      tauxReussite: notes.length > 0 
+        ? Math.round((notesReussies / notes.length) * 100)
+        : 0,
+      tendanceExercicesCompletes: 0, // À implémenter selon vos besoins
+      tendanceExercicesEnCours: 0,
+      tendanceNoteMoyenne: 0,
+      tendanceRang: 0
+    };
+
+  } catch (error) {
+    console.error("Erreur dans getEtudiantStats:", error);
+    throw new Error("Erreur lors de la récupération des statistiques");
+  }
+}
+
+/**
+ * Récupère les exercices de l'étudiant
+ */
+export async function getEtudiantExercices(userId: number) {
+  try {
+    validateUserId(userId);
+
+    const [sujets, soumissions] = await Promise.all([
+      prisma.sujet.findMany({
+        where: { status: "Publié" },
+        orderBy: { Delai: 'desc' }
+      }),
+      prisma.soumission.findMany({
+        where: { etudiant_id: userId },
+        include: { sujet: true }
+      })
+    ]);
+
     return sujets.map(sujet => {
-      let status = 'À faire'
-      
-      if (sujet.soumissions.length > 0) {
-        const now = new Date()
-        if (now > sujet.Delai) {
-          status = 'Complété'
-        } else {
-          status = 'En cours'
-        }
+      const soumission = soumissions.find(s => s.sujet_id === sujet.id);
+      const maintenant = new Date();
+      const delai = new Date(sujet.Delai);
+      const dateDepot = new Date(sujet.DateDeDepot);
+
+      let status = "À faire";
+      if (soumission) {
+        status = "Complété";
+      } else if (maintenant > dateDepot && maintenant < delai) {
+        status = "En cours";
       }
+
+      return {
+        id: sujet.id,
+        titre: sujet.Titre || `Exercice ${sujet.id}`,
+        sousTitre: sujet.sousTitre || "",
+        description: sujet.Description || "",
+        status,
+        dateLimite: sujet.Delai,
+        dateCreation: sujet.DateDeDepot
+      };
+    });
+
+  } catch (error) {
+    console.error("Erreur dans getEtudiantExercices:", error);
+    throw new Error("Erreur lors de la récupération des exercices");
+  }
+}
+
+/**
+ * Récupère les détails d'un exercice spécifique
+ */
+export async function getExerciceDetails(userId: number, exerciceId: number) {
+  try {
+    validateUserId(userId);
+
+    const [sujet, soumission, note] = await Promise.all([
+      prisma.sujet.findUnique({ where: { id: exerciceId } }),
+      prisma.soumission.findFirst({
+        where: { etudiant_id: userId, sujet_id: exerciceId }
+      }),
+      prisma.note.findFirst({
+        where: { etudiant_id: userId, sujet_id: exerciceId }
+      })
+    ]);
+
+    if (!sujet) {
+      throw new Error("Exercice non trouvé");
+    }
+
+    return {
+      id: sujet.id,
+      titre: sujet.Titre || `Exercice ${sujet.id}`,
+      sousTitre: sujet.sousTitre || "",
+      description: sujet.Description || "",
+      fichier: sujet.file?.toString('base64') || null,
+      dateLimite: sujet.Delai,
+      dateCreation: sujet.DateDeDepot,
+      status: soumission ? "Complété" : "À faire",
+      soumission: soumission ? {
+        id: soumission.id,
+        fichier: soumission.fichier?.toString('base64') || null,
+        commentaire: soumission.commentaire || "",
+        dateSoumission: soumission.dateSoumission
+      } : null,
+      note: note ? Number(note.Note) : null
+    };
+
+  } catch (error) {
+    console.error("Erreur dans getExerciceDetails:", error);
+    throw new Error("Erreur lors de la récupération des détails");
+  }
+}
+
+/**
+ * Soumet un exercice
+ */
+export async function soumettreExercice(
+  userId: number,
+  exerciceId: number,
+  formData: FormData
+) {
+  try {
+    validateUserId(userId);
+
+    const fichier = formData.get('fichier') as File;
+    const commentaire = formData.get('commentaire') as string;
+    
+    if (!fichier) {
+      throw new Error("Aucun fichier fourni");
+    }
+
+    const buffer = Buffer.from(await fichier.arrayBuffer());
+    const existingSoumission = await prisma.soumission.findFirst({
+      where: { etudiant_id: userId, sujet_id: exerciceId }
+    });
+
+    const soumission = existingSoumission
+      ? await prisma.soumission.update({
+          where: { id: existingSoumission.id },
+          data: { fichier: buffer, commentaire, dateSoumission: new Date() }
+        })
+      : await prisma.soumission.create({
+          data: {
+            fichier: buffer,
+            commentaire: commentaire || null,
+            etudiant_id: userId,
+            sujet_id: exerciceId,
+            dateSoumission: new Date()
+          }
+        });
+
+    revalidatePaths(exerciceId);
+
+    return {
+      success: true,
+      message: "Exercice soumis avec succès",
+      soumissionId: soumission.id
+    };
+
+  } catch (error) {
+    console.error("Erreur dans soumettreExercice:", error);
+    throw new Error("Erreur lors de la soumission");
+  }
+}
+
+/**
+ * Télécharge un fichier (sujet ou soumission)
+ */
+export async function telechargerFichier(
+  userId: number,
+  type: 'sujet' | 'soumission', 
+  id: number
+) {
+  try {
+    validateUserId(userId);
+
+    if (type === 'sujet') {
+      const sujet = await prisma.sujet.findUnique({ where: { id } });
+      if (!sujet?.file) throw new Error("Fichier du sujet non trouvé");
       
       return {
-        title: sujet.Titre || 'Sans titre',
-        status: status,
-        date: sujet.DateDeDepot.toLocaleDateString('fr-FR'),
-        id: sujet.id
-      }
-    })
-  }
-}
+        fichier: sujet.file.toString('base64'),
+        nom: `sujet_${id}.pdf`
+      };
+    } else {
+      const soumission = await prisma.soumission.findUnique({ where: { id } });
+      if (!soumission?.fichier) throw new Error("Fichier de soumission non trouvé");
+      if (soumission.etudiant_id !== userId) throw new Error("Non autorisé");
 
-// Get performance metrics
-export async function getPerformanceMetrics() {
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error('Non authentifié')
-  }
-
-  const userId = user.id
-  const userRole = user.role
-  
-  if (userRole === 'professeur') {
-    // Professor metrics - average class grade
-    const classAverage = await prisma.note.aggregate({
-      _avg: {
-        Note: true
-      }
-    })
-    
-    // Calculate success rate (e.g., submissions with grade > 10/20)
-    const totalSubmissions = await prisma.note.count()
-    const passingSubmissions = await prisma.note.count({
-      where: {
-        Note: {
-          gte: 10
-        }
-      }
-    })
-    
-    const successRate = totalSubmissions > 0 
-      ? Math.round((passingSubmissions / totalSubmissions) * 100) 
-      : 0
-    
-    return {
-      averageGrade: classAverage._avg.Note?.toFixed(1) || '0',
-      successRate: `${successRate}%`
+      return {
+        fichier: soumission.fichier.toString('base64'),
+        nom: `soumission_${id}.pdf`
+      };
     }
-  } else {
-    // Student metrics - personal average grade
-    const studentAverage = await prisma.note.aggregate({
-      where: {
-        etudiant_id: userId
-      },
-      _avg: {
-        Note: true
-      }
-    })
-    
-    // Calculate personal success rate
-    const totalPersonalSubmissions = await prisma.note.count({
-      where: {
-        etudiant_id: userId
-      }
-    })
-    
-    const passingPersonalSubmissions = await prisma.note.count({
-      where: {
-        etudiant_id: userId,
-        Note: {
-          gte: 10
-        }
-      }
-    })
-    
-    const personalSuccessRate = totalPersonalSubmissions > 0 
-      ? Math.round((passingPersonalSubmissions / totalPersonalSubmissions) * 100) 
-      : 0
-    
-    return {
-      averageGrade: studentAverage._avg.Note?.toFixed(1) || '0',
-      successRate: `${personalSuccessRate}%`
-    }
-  }
-}
-
-export async function getUserInfo() {
-  try {
-    const session = await getSession();
-    
-    // More detailed logging for debugging
-    console.log("[etudiant:getUserInfo] Session found:", !!session);
-    console.log("[etudiant:getUserInfo] Session user:", session?.user ? {
-      id: session.user.id,
-      email: session.user.email,
-      role: session.user.role
-    } : 'No user in session');
-    
-    if (!session || !session.user) {
-      console.error("[etudiant:getUserInfo] No session found");
-      throw new Error("Non authentifié");
-    }
-    
-    // Get the user ID from the session
-    const userId = session.user.id;
-    
-    if (!userId) {
-      console.error("[etudiant:getUserInfo] No user ID in session");
-      throw new Error("Session incomplète: ID utilisateur manquant");
-    }
-    
-    console.log("[etudiant:getUserInfo] Fetching user details with ID:", userId);
-    
-    const userDetails = await prisma.utilisateur.findUnique({
-      where: {
-        id: parseInt(userId, 10) // Convert to number if your DB expects a number ID
-      },
-      select: {
-        prenom: true,
-        nom: true,
-        roles: {
-          include: {
-            role: true
-          }
-        }
-      }
-    });
-    
-    if (!userDetails) {
-      console.error("[etudiant:getUserInfo] User not found in database with ID:", userId);
-      throw new Error("Utilisateur non trouvé");
-    }
-    
-    console.log("[etudiant:getUserInfo] User details retrieved:", {
-      prenom: userDetails.prenom,
-      nom: userDetails.nom
-    });
-    
-    return {
-      prenom: userDetails.prenom,
-      nom: userDetails.nom,
-      role: session.user.role || userDetails.roles[0]?.role.nom || 'etudiant'
-    };
   } catch (error) {
-    console.error("[etudiant:getUserInfo] Error:", error);
-    throw error;
+    console.error("Erreur dans telechargerFichier:", error);
+    throw new Error("Erreur lors du téléchargement");
   }
+}
+
+// Fonction utilitaire pour revalider les chemins
+function revalidatePaths(exerciceId: number) {
+  revalidatePath(`/etudiant/exercice/${exerciceId}`);
+  revalidatePath('/etudiant/exercices');
+  revalidatePath('/etudiant/dashboard');
 }

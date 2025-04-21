@@ -3,32 +3,29 @@
 import { useState, useEffect, useRef } from "react";
 import { Menu, Bell, ChevronDown, Database, BookOpen, TrendingUp, TrendingDown, Users, Award, Calendar } from 'lucide-react';
 import Sidebar from "../../src/components/Sidebar";
-// app/dashboard/page.tsx
 import { useSession } from "next-auth/react";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { redirect } from "next/navigation";
+import { useRouter } from "next/navigation";
 
+type UserRole = 'professeur' | 'etudiant';
 
-type UserRole = 'professor' | 'student';
-
-export default  function Dashboard() {
-  // State
-
- // Utilise useSession pour accéder à la session
-
- 
+export default function ProfesseurDashboard() {
+  // 1. DÉPLACER TOUS LES HOOKS AVANT TOUTE LOGIQUE CONDITIONNELLE
   const { data: session, status } = useSession();
-  if (status === 'unauthenticated') {
-    redirect('/login');
-  }
-  if (!session) {
-    return <div>Loading...</div>; // Affiche quelque chose pendant le chargement de la session
-  }
-  const [userRole, setUserRole] = useState<UserRole>('professor');
+  const router = useRouter();
+  
+  // 2. TOUS LES useState DOIVENT ÊTRE DÉCLARÉS ICI, SANS CONDITION
+  const [userRole, setUserRole] = useState<UserRole>('professeur');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
- 
+  
+  // 3. UTILISER useEffect POUR LES REDIRECTIONS, PAS DES RETOURS CONDITIONNELS
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/login');
+    }
+  }, [status, router]);
+  
   // Toggle functions
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
@@ -46,22 +43,22 @@ export default  function Dashboard() {
   // Stats data
   const stats = [
     { 
-      name: userRole === 'professor' ? 'Exercices créés' : 'Exercices complétés', 
-      value: userRole === 'professor' ? '24' : '18', 
+      name: userRole === 'professeur' ? 'Exercices créés' : 'Exercices complétés', 
+      value: userRole === 'professeur' ? '24' : '18', 
       icon: BookOpen, 
       iconBg: 'bg-blue-500', 
       trend: 12 
     },
     { 
-      name: userRole === 'professor' ? 'Étudiants actifs' : 'Exercices en cours', 
-      value: userRole === 'professor' ? '156' : '3', 
-      icon: userRole === 'professor' ? Users : Calendar, 
+      name: userRole === 'professeur' ? 'Étudiants actifs' : 'Exercices en cours', 
+      value: userRole === 'professeur' ? '156' : '3', 
+      icon: userRole === 'professeur' ? Users : Calendar, 
       iconBg: 'bg-green-500', 
       trend: 8 
     },
     { 
-      name: userRole === 'professor' ? 'Note moyenne' : 'Note moyenne', 
-      value: userRole === 'professor' ? '14.8' : '15.2', 
+      name: userRole === 'professeur' ? 'Note moyenne' : 'Note moyenne', 
+      value: userRole === 'professeur' ? '14.8' : '15.2', 
       icon: Award, 
       iconBg: 'bg-purple-500', 
       trend: -3 
@@ -72,7 +69,7 @@ export default  function Dashboard() {
   const recentExercises = [
     { 
       title: 'Requêtes SQL avancées', 
-      status: userRole === 'professor' ? 'Publié' : 'Complété', 
+      status: userRole === 'professeur' ? 'Publié' : 'Complété', 
       statusColor: 'bg-green-500',
       statusBg: 'bg-green-100 dark:bg-green-900/30',
       statusText: 'text-green-800 dark:text-green-300',
@@ -81,7 +78,7 @@ export default  function Dashboard() {
     },
     { 
       title: 'Modélisation de données', 
-      status: userRole === 'professor' ? 'Brouillon' : 'En cours', 
+      status: userRole === 'professeur' ? 'Brouillon' : 'En cours', 
       statusColor: 'bg-yellow-500',
       statusBg: 'bg-yellow-100 dark:bg-yellow-900/30',
       statusText: 'text-yellow-800 dark:text-yellow-300',
@@ -90,7 +87,7 @@ export default  function Dashboard() {
     },
     { 
       title: 'Normalisation et optimisation', 
-      status: userRole === 'professor' ? 'Publié' : 'À faire', 
+      status: userRole === 'professeur' ? 'Publié' : 'À faire', 
       statusColor: 'bg-blue-500',
       statusBg: 'bg-blue-100 dark:bg-blue-900/30',
       statusText: 'text-blue-800 dark:text-blue-300',
@@ -101,22 +98,26 @@ export default  function Dashboard() {
 
   // Check system preference for dark mode on mount
   useEffect(() => {
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    if (typeof window !== 'undefined' && window.matchMedia && 
+        window.matchMedia('(prefers-color-scheme: dark)').matches) {
       setIsDarkMode(true);
       document.documentElement.classList.add('dark');
     }
-    
-    // Initialize charts (placeholder for actual chart implementation)
-    // In a real application, you would use a charting library like Chart.js or ApexCharts
   }, []);
-
-  if (!session?.user) {  // Vérification plus stricte
-    redirect("/login");
-  }
   
+  // 4. AFFICHER UN CHARGEMENT SI BESOIN SELON L'ÉTAT DE SESSION
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="flex flex-col items-center">
+          <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="mt-4 text-lg text-gray-700 dark:text-gray-300">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-   
- 
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-500">
       <div className="flex">
         {/* Sidebar */}
@@ -141,8 +142,6 @@ export default  function Dashboard() {
                   <Menu className="w-6 h-6" />
                 </button>
                 <h1 className="text-lg font-semibold text-gray-800 dark:text-white">Tableau de bord</h1>
-                
- 
               </div>
               
               <div className="flex items-center space-x-3">
@@ -167,10 +166,10 @@ export default  function Dashboard() {
             <div className="animate-fade-in">
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 mb-6 border border-gray-100 dark:border-gray-700">
                 <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
-                  Bienvenue, {session.user?.name} 👋
+                  Bienvenue, {session?.user?.name || 'Professeur'} 👋
                 </h2>
                 <p className="text-gray-600 dark:text-gray-300">
-                  {userRole === 'professor' 
+                  {userRole === 'professeur' 
                     ? 'Vous avez 5 nouveaux exercices soumis à évaluer aujourd\'hui.' 
                     : 'Vous avez 2 nouveaux exercices à compléter cette semaine.'
                   }
@@ -212,7 +211,7 @@ export default  function Dashboard() {
                 <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-100 dark:border-gray-700">
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
-                      {userRole === 'professor' ? 'Exercices récents' : 'Mes exercices'}
+                      {userRole === 'professeur' ? 'Exercices récents' : 'Mes exercices'}
                     </h3>
                     <button className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors">
                       Voir tout
@@ -258,13 +257,13 @@ export default  function Dashboard() {
                     <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
                       <p className="text-xs text-gray-500 dark:text-gray-400">Note moyenne</p>
                       <p className="text-lg font-semibold text-gray-800 dark:text-white mt-1">
-                        {userRole === 'professor' ? '14.8/20' : '15.2/20'}
+                        {userRole === 'professeur' ? '14.8/20' : '15.2/20'}
                       </p>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
                       <p className="text-xs text-gray-500 dark:text-gray-400">Taux de réussite</p>
                       <p className="text-lg font-semibold text-gray-800 dark:text-white mt-1">
-                        {userRole === 'professor' ? '78%' : '85%'}
+                        {userRole === 'professeur' ? '78%' : '85%'}
                       </p>
                     </div>
                   </div>
