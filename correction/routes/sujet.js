@@ -1,220 +1,486 @@
 const express = require("express")
 const multer = require("multer")
-const minioClient = require("../upload/minio") // Importation de la config MinIO
-const db = require("../config/db") // Connexion MySQL
+const minioClient = require("../upload/minio") // Chemin correct vers la config MinIO
+const db = require("../config/db") // Chemin correct vers la connexion MySQL
 const { v4: uuidv4 } = require("uuid")
-const util = require("util")
 
 const router = express.Router()
 
-// Configurer Multer avec des limites augmentées
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB max file size
-  },
-})
+// Configurer Multer (stockage en mémoire avant upload)
+const upload = multer({ storage: multer.memoryStorage() })
 
-// Promisify MinIO putObject pour utiliser async/await
-const putObjectPromise = util.promisify((bucket, fileName, buffer, size, mimetype, callback) => {
-  minioClient.putObject(bucket, fileName, buffer, size, mimetype, callback)
-})
-
-// Fonction pour construire l'URL du fichier
-function buildFileUrl(endpoint, bucket, fileName) {
-  // Vérifier si l'endpoint contient déjà http:// ou https://
-  if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
-    // Ajouter http:// par défaut, ou https:// si useSSL est true
-    const protocol = process.env.MINIO_USE_SSL === "true" ? "https://" : "http://"
-    endpoint = protocol + endpoint
-  }
-
-  // Ajouter le port si ce n'est pas le port standard (80 pour HTTP, 443 pour HTTPS)
-  if (
-    process.env.MINIO_PORT &&
-    !(
-      (endpoint.startsWith("http://") && process.env.MINIO_PORT === "80") ||
-      (endpoint.startsWith("https://") && process.env.MINIO_PORT === "443")
-    )
-  ) {
-    // Vérifier si l'endpoint contient déjà un port
-    if (!endpoint.includes(":", 8)) {
-      // 8 est la position après http:// ou https://
-      endpoint = `${endpoint}:${process.env.MINIO_PORT}`
+// Fonction pour décoder les URLs hexadécimales
+function decodeHexString(hexString) {
+  try {
+    // Vérifier si c'est une chaîne hexadécimale (commence par 0x)
+    if (typeof hexString === "string" && hexString.startsWith("0x")) {
+      // Supprimer le préfixe 0x et convertir en chaîne de caractères
+      const hex = hexString.substring(2)
+      let str = ""
+      for (let i = 0; i < hex.length; i += 2) {
+        const charCode = Number.parseInt(hex.substr(i, 2), 16)
+        str += String.fromCharCode(charCode)
+      }
+      return str
     }
+    return hexString // Retourner la valeur d'origine si ce n'est pas une chaîne hexadécimale
+  } catch (error) {
+    console.error("Erreur lors du décodage de l'URL hexadécimale:", error)
+    return hexString // En cas d'erreur, retourner la valeur d'origine
   }
-
-  return `${endpoint}/${bucket}/${fileName}`
 }
 
-// Route pour téléverser un PDF
-router.post("/upload", upload.single("fichier"), async (req, res) => {
-  console.log("=== DÉBUT DE LA REQUÊTE D'UPLOAD ===")
-
-  // Vérifier si un fichier a été envoyé
-  if (!req.file) {
-    console.log("Erreur: Aucun fichier envoyé")
-    return res.status(400).json({ error: "Aucun fichier envoyé" })
-  }
-
+// Fonction pour vérifier si un bucket existe et le créer si nécessaire
+const ensureBucketExists = async (bucketName) => {
   try {
-    console.log("Requête reçue:", {
-      body: req.body,
-      file: {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-      },
-    })
-
-    // Vérification des paramètres requis
-    const { id_Sujet, TypeDeSujet, DateDeDepot, Delai } = req.body
-
-    if (!id_Sujet) {
-      console.log("Erreur: id_Sujet manquant")
-      return res.status(400).json({ error: "Paramètre manquant: id_Sujet" })
-    }
-
-    if (!TypeDeSujet) {
-      console.log("Erreur: TypeDeSujet manquant")
-      return res.status(400).json({ error: "Paramètre manquant: TypeDeSujet" })
-    }
-
-    if (!DateDeDepot) {
-      console.log("Erreur: DateDeDepot manquant")
-      return res.status(400).json({ error: "Paramètre manquant: DateDeDepot" })
-    }
-
-    if (!Delai) {
-      console.log("Erreur: Delai manquant")
-      return res.status(400).json({ error: "Paramètre manquant: Delai" })
-    }
-
-    const bucketName = process.env.MINIO_BUCKET_NAME || "sujets"
-    const fileName = `sujets/${uuidv4()}_${req.file.originalname}`
-    console.log("Nom du fichier généré:", fileName)
-    console.log("Bucket cible:", bucketName)
-
-    // Vérifier si le bucket existe
-    console.log("Vérification de l'existence du bucket...")
-    const bucketExists = await minioClient.bucketExists(bucketName).catch((err) => {
-      console.error("Erreur lors de la vérification du bucket:", err)
-      throw new Error(`Erreur MinIO: ${err.message}`)
-    })
-
-    if (!bucketExists) {
-      console.log(`Le bucket '${bucketName}' n'existe pas, tentative de création...`)
-      await minioClient.makeBucket(bucketName, "us-east-1").catch((err) => {
-        console.error("Erreur lors de la création du bucket:", err)
-        throw new Error(`Impossible de créer le bucket: ${err.message}`)
-      })
-      console.log(`Bucket '${bucketName}' créé avec succès.`)
+    const exists = await minioClient.bucketExists(bucketName)
+    if (!exists) {
+      console.log(`Le bucket ${bucketName} n'existe pas, création...`)
+      await minioClient.makeBucket(bucketName, "us-east-1")
+      console.log(`Bucket ${bucketName} créé avec succès`)
     } else {
-      console.log(`Bucket '${bucketName}' existe déjà.`)
+      console.log(`Bucket ${bucketName} existe déjà`)
     }
-
-    // Upload du fichier sur MinIO
-    console.log("Tentative d'upload sur MinIO...")
-    try {
-      await new Promise((resolve, reject) => {
-        minioClient.putObject(bucketName, fileName, req.file.buffer, req.file.size, req.file.mimetype, (err, etag) => {
-          if (err) {
-            console.error("Erreur upload MinIO:", err)
-            return reject(err)
-          }
-          console.log("Upload MinIO réussi, etag:", etag)
-          resolve(etag)
-        })
-      })
-    } catch (err) {
-      console.error("Erreur lors de l'upload du fichier sur MinIO:", err)
-      return res.status(500).json({
-        error: "Erreur lors de l'upload du fichier",
-        details: err.message,
-      })
-    }
-
-    // Générer l'URL du fichier
-    const fileUrl = buildFileUrl(process.env.MINIO_ENDPOINT || "localhost", bucketName, fileName)
-
-    console.log("URL du fichier générée:", fileUrl)
-
-    // Enregistrer l'URL dans la base de données
-    console.log("Tentative d'insertion dans la base de données...")
-    try {
-      const result = await new Promise((resolve, reject) => {
-        db.query(
-          "INSERT INTO Sujet (id_Sujet, TypeDeSujet, DateDeDepot, Delai, fichier_pdf) VALUES (?, ?, ?, ?, ?)",
-          [id_Sujet, TypeDeSujet, DateDeDepot, Delai, fileUrl],
-          (err, result) => {
-            if (err) {
-              console.error("Erreur SQL lors de l'ajout du sujet:", err)
-              return reject(err)
-            }
-            console.log("Insertion dans la base de données réussie, résultat:", result)
-            resolve(result)
-          },
-        )
-      })
-
-      console.log("=== FIN DE LA REQUÊTE D'UPLOAD (SUCCÈS) ===")
-      return res.json({
-        message: "Sujet ajouté avec succès !",
-        pdfUrl: fileUrl,
-        id: id_Sujet,
-      })
-    } catch (err) {
-      console.error("Erreur lors de l'insertion dans la base de données:", err)
-      return res.status(500).json({
-        error: "Erreur lors de l'ajout du sujet dans la base de données",
-        details: err.message,
-      })
-    }
-  } catch (error) {
-    console.error("Erreur serveur:", error)
-    console.log("=== FIN DE LA REQUÊTE D'UPLOAD (ÉCHEC) ===")
-    return res.status(500).json({
-      error: "Erreur serveur",
-      message: error.message,
-      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
-    })
+    return true
+  } catch (err) {
+    console.error(`Erreur lors de la vérification/création du bucket ${bucketName}:`, err)
+    return false
   }
+}
+
+// Fonction pour uploader un fichier vers MinIO
+const uploadToMinio = (bucketName, fileName, fileBuffer, fileType) => {
+  return new Promise((resolve, reject) => {
+    minioClient.putObject(bucketName, fileName, fileBuffer, fileType, (err, etag) => {
+      if (err) {
+        console.error(`Erreur upload MinIO (${bucketName}):`, err)
+        reject(err)
+      } else {
+        const fileUrl = `${process.env.MINIO_ENDPOINT || "http://localhost"}/${bucketName}/${fileName}`
+        console.log(`Fichier uploadé avec succès dans ${bucketName}:`, fileName)
+        resolve(fileUrl)
+      }
+    })
+  })
+}
+
+// Route pour téléverser les fichiers
+router.post(
+  "/",
+  upload.fields([
+    { name: "fichier", maxCount: 1 },
+    { name: "correction", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    console.log("=== DÉBUT DE LA REQUÊTE D'UPLOAD ===")
+    console.log("Files reçus:", req.files)
+    console.log("Body reçu:", req.body)
+
+    if (!req.files || !req.files.fichier) {
+      return res.status(400).json({ error: "Aucun fichier d'exercice envoyé" })
+    }
+
+    const exerciseFile = req.files.fichier[0]
+    const correctionFile = req.files.correction ? req.files.correction[0] : null
+
+    try {
+      // Vérifier que les buckets existent
+      const sujetsBucketName = "sujets"
+      const correctionBucketName = "modele"
+
+      const sujetBucketExists = await ensureBucketExists(sujetsBucketName)
+      if (!sujetBucketExists) {
+        return res.status(500).json({ error: "Impossible de créer ou vérifier le bucket des sujets" })
+      }
+
+      if (correctionFile) {
+        const correctionBucketExists = await ensureBucketExists(correctionBucketName)
+        if (!correctionBucketExists) {
+          return res.status(500).json({ error: "Impossible de créer ou vérifier le bucket des corrections" })
+        }
+      }
+
+      // Extraire les données du formulaire
+      const { titre, sousTitre, categorie, statut, description, dateLimite } = req.body
+
+      // Générer des noms de fichiers uniques
+      const exerciseFileName = `${uuidv4()}_${exerciseFile.originalname}`
+
+      // Upload du fichier d'exercice
+      let exerciseFileUrl
+      try {
+        exerciseFileUrl = await uploadToMinio(
+          sujetsBucketName,
+          exerciseFileName,
+          exerciseFile.buffer,
+          exerciseFile.mimetype,
+        )
+      } catch (err) {
+        return res.status(500).json({
+          error: "Erreur lors de l'upload du fichier d'exercice",
+          details: err.message,
+        })
+      }
+
+      // Upload du fichier de correction si présent
+      let correctionFileUrl = null
+      if (correctionFile) {
+        const correctionFileName = `${uuidv4()}_${correctionFile.originalname}`
+        try {
+          correctionFileUrl = await uploadToMinio(
+            correctionBucketName,
+            correctionFileName,
+            correctionFile.buffer,
+            correctionFile.mimetype,
+          )
+        } catch (err) {
+          return res.status(500).json({
+            error: "Erreur lors de l'upload du fichier de correction",
+            details: err.message,
+          })
+        }
+      }
+
+      // Insérer les données dans la base de données
+      const insertQuery = `
+      INSERT INTO Sujet (
+        id_Sujet, TypeDeSujet, DateDeDepot, Delai, 
+        file, Titre, correctionUrl, Description, sousTitre, status
+      ) VALUES (NULL, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?)
+    `
+
+      db.query(
+        insertQuery,
+        [
+          categorie || "SQL",
+          dateLimite ? new Date(dateLimite) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 jours par défaut
+          exerciseFileUrl,
+          titre,
+          correctionFileUrl,
+          description || null,
+          sousTitre || null,
+          statut || "brouillon",
+        ],
+        (err, result) => {
+          if (err) {
+            console.error("Erreur SQL lors de l'ajout du sujet:", err)
+            return res.status(500).json({
+              error: "Erreur lors de l'ajout du sujet dans la base de données",
+              details: err.message,
+            })
+          }
+
+          console.log("Sujet ajouté avec succès, ID:", result.insertId)
+          res.status(201).json({
+            message: "Sujet ajouté avec succès !",
+            id: result.insertId,
+            fichierUrl: exerciseFileUrl,
+            correctionUrl: correctionFileUrl,
+          })
+        },
+      )
+    } catch (error) {
+      console.error("Erreur serveur:", error)
+      res.status(500).json({
+        error: "Erreur serveur",
+        message: error.message,
+      })
+    }
+  },
+)
+
+// Route pour récupérer tous les sujets
+router.get("/", (req, res) => {
+  db.query("SELECT * FROM Sujet ORDER BY DateDeDepot DESC", (err, results) => {
+    if (err) {
+      console.error("Erreur lors de la récupération des sujets:", err)
+      return res.status(500).json({ error: "Erreur serveur" })
+    }
+
+    try {
+      // Décoder les URLs des fichiers
+      const decodedResults = results.map((sujet) => ({
+        ...sujet,
+        file: decodeHexString(sujet.file),
+        correctionUrl: decodeHexString(sujet.correctionUrl),
+      }))
+
+      res.json(decodedResults)
+    } catch (error) {
+      console.error("Erreur lors du décodage des URLs:", error)
+      // En cas d'erreur, renvoyer les résultats sans décodage
+      res.json(results)
+    }
+  })
 })
 
 // Route pour récupérer un sujet par ID
 router.get("/:id", (req, res) => {
-  console.log(`Récupération du sujet avec ID: ${req.params.id}`)
-
   db.query("SELECT * FROM Sujet WHERE id_Sujet = ?", [req.params.id], (err, result) => {
     if (err) {
       console.error("Erreur lors de la récupération du sujet:", err)
-      return res.status(500).json({ error: "Erreur serveur", details: err.message })
+      return res.status(500).json({ error: "Erreur serveur" })
     }
-
     if (result.length === 0) {
-      console.log(`Sujet avec ID ${req.params.id} non trouvé`)
       return res.status(404).json({ error: "Sujet non trouvé" })
     }
 
-    console.log(`Sujet avec ID ${req.params.id} trouvé:`, result[0])
-    res.json(result[0]) // Retourne l'objet complet, y compris le lien PDF
+    try {
+      // Décoder les URLs des fichiers
+      const sujet = result[0]
+      sujet.file = decodeHexString(sujet.file)
+      sujet.correctionUrl = decodeHexString(sujet.correctionUrl)
+
+      res.json(sujet)
+    } catch (error) {
+      console.error("Erreur lors du décodage des URLs:", error)
+      // En cas d'erreur, renvoyer le résultat sans décodage
+      res.json(result[0])
+    }
   })
 })
 
-// Route pour récupérer tous les sujets
-router.get("/", (req, res) => {
-  console.log("Récupération de tous les sujets")
+// Route pour mettre à jour un sujet
+router.put(
+  "/:id",
+  upload.fields([
+    { name: "fichier", maxCount: 1 },
+    { name: "correction", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const sujetId = req.params.id
 
-  db.query("SELECT * FROM Sujet", (err, results) => {
+    try {
+      // Récupérer le sujet existant
+      db.query("SELECT * FROM Sujet WHERE id_Sujet = ?", [sujetId], async (err, results) => {
+        if (err) {
+          return res.status(500).json({ error: "Erreur lors de la récupération du sujet" })
+        }
+        if (results.length === 0) {
+          return res.status(404).json({ error: "Sujet non trouvé" })
+        }
+
+        const existingSujet = results[0]
+        // Décoder les URLs des fichiers existants
+        try {
+          existingSujet.file = decodeHexString(existingSujet.file)
+          existingSujet.correctionUrl = decodeHexString(existingSujet.correctionUrl)
+        } catch (error) {
+          console.error("Erreur lors du décodage des URLs existantes:", error)
+          // Continuer avec les URLs non décodées en cas d'erreur
+        }
+
+        const { titre, sousTitre, categorie, statut, description, dateLimite } = req.body
+
+        // Gérer les uploads de fichiers si présents
+        let exerciseFileUrl = existingSujet.file
+        let correctionFileUrl = existingSujet.correctionUrl
+
+        if (req.files && req.files.fichier) {
+          const exerciseFile = req.files.fichier[0]
+          const exerciseFileName = `${uuidv4()}_${exerciseFile.originalname}`
+          try {
+            exerciseFileUrl = await uploadToMinio(
+              "sujets",
+              exerciseFileName,
+              exerciseFile.buffer,
+              exerciseFile.mimetype,
+            )
+          } catch (err) {
+            return res.status(500).json({
+              error: "Erreur lors de l'upload du nouveau fichier d'exercice",
+              details: err.message,
+            })
+          }
+        }
+
+        if (req.files && req.files.correction) {
+          const correctionFile = req.files.correction[0]
+          const correctionFileName = `${uuidv4()}_${correctionFile.originalname}`
+          try {
+            correctionFileUrl = await uploadToMinio(
+              "modele",
+              correctionFileName,
+              correctionFile.buffer,
+              correctionFile.mimetype,
+            )
+          } catch (err) {
+            return res.status(500).json({
+              error: "Erreur lors de l'upload du nouveau fichier de correction",
+              details: err.message,
+            })
+          }
+        }
+
+        // Mettre à jour la base de données
+        const updateQuery = `
+        UPDATE Sujet SET 
+          TypeDeSujet = ?, 
+          Delai = ?, 
+          file = ?, 
+          Titre = ?, 
+          correctionUrl = ?,
+          Description = ?, 
+          sousTitre = ?,
+          status = ?
+        WHERE id_Sujet = ?
+      `
+
+        db.query(
+          updateQuery,
+          [
+            categorie || existingSujet.TypeDeSujet,
+            dateLimite ? new Date(dateLimite) : existingSujet.Delai,
+            exerciseFileUrl,
+            titre || existingSujet.Titre,
+            correctionFileUrl,
+            description || existingSujet.Description,
+            sousTitre || existingSujet.sousTitre,
+            statut || existingSujet.status,
+            sujetId,
+          ],
+          (updateErr) => {
+            if (updateErr) {
+              console.error("Erreur lors de la mise à jour du sujet:", updateErr)
+              return res.status(500).json({
+                error: "Erreur lors de la mise à jour du sujet",
+                details: updateErr.message,
+              })
+            }
+
+            res.json({
+              message: "Sujet mis à jour avec succès",
+              id: sujetId,
+              fichierUrl: exerciseFileUrl,
+              correctionUrl: correctionFileUrl,
+            })
+          },
+        )
+      })
+    } catch (error) {
+      console.error("Erreur serveur:", error)
+      res.status(500).json({ error: "Erreur serveur", message: error.message })
+    }
+  },
+)
+
+// Route pour supprimer un sujet
+router.delete("/:id", (req, res) => {
+  const sujetId = req.params.id
+
+  // Récupérer d'abord les URLs des fichiers pour pouvoir les supprimer de MinIO
+  db.query("SELECT file, correctionUrl FROM Sujet WHERE id_Sujet = ?", [sujetId], (err, results) => {
     if (err) {
-      console.error("Erreur lors de la récupération des sujets:", err)
-      return res.status(500).json({ error: "Erreur serveur", details: err.message })
+      return res.status(500).json({ error: "Erreur lors de la récupération du sujet" })
+    }
+    if (results.length === 0) {
+      return res.status(404).json({ error: "Sujet non trouvé" })
     }
 
-    console.log(`${results.length} sujets trouvés`)
-    res.json(results)
+    // Supprimer le sujet de la base de données
+    db.query("DELETE FROM Sujet WHERE id_Sujet = ?", [sujetId], (deleteErr) => {
+      if (deleteErr) {
+        return res.status(500).json({ error: "Erreur lors de la suppression du sujet" })
+      }
+
+      res.json({ message: "Sujet supprimé avec succès" })
+
+      // Optionnel: supprimer les fichiers de MinIO
+      // Note: Cela peut être fait de manière asynchrone après avoir envoyé la réponse
+      const sujet = results[0]
+
+      try {
+        // Décoder les URLs des fichiers
+        const fileUrl = decodeHexString(sujet.file)
+        const correctionUrl = decodeHexString(sujet.correctionUrl)
+
+        // Supprimer le fichier d'exercice
+        if (fileUrl && typeof fileUrl === "string") {
+          try {
+            const fichierPath = fileUrl.split("/").slice(3).join("/")
+            minioClient.removeObject("sujets", fichierPath, (removeErr) => {
+              if (removeErr) {
+                console.error("Erreur lors de la suppression du fichier d'exercice:", removeErr)
+              }
+            })
+          } catch (error) {
+            console.error("Erreur lors du traitement du chemin du fichier d'exercice:", error)
+          }
+        }
+
+        // Supprimer le fichier de correction
+        if (correctionUrl && typeof correctionUrl === "string") {
+          try {
+            const correctionPath = correctionUrl.split("/").slice(3).join("/")
+            minioClient.removeObject("modele", correctionPath, (removeErr) => {
+              if (removeErr) {
+                console.error("Erreur lors de la suppression du fichier de correction:", removeErr)
+              }
+            })
+          } catch (error) {
+            console.error("Erreur lors du traitement du chemin du fichier de correction:", error)
+          }
+        }
+      } catch (error) {
+        console.error("Erreur lors du décodage des URLs pour la suppression:", error)
+      }
+    })
   })
 })
+
+router.get("/", (req, res) => {
+  try {
+    // Date d'il y a une semaine
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const formattedDate = oneWeekAgo.toISOString().split('T')[0]; // Format YYYY-MM-DD
+
+    // Récupérer les statistiques actuelles et de la semaine dernière
+    const query = `
+      SELECT 
+        (SELECT COUNT(*) FROM Sujet) AS total_exercises,
+        (SELECT COUNT(*) FROM Sujet WHERE DateDeDepot < ?) AS last_week_exercises,
+        (SELECT COUNT(*) FROM User WHERE role = 'student') AS total_students,
+        (SELECT COUNT(DISTINCT id_User) FROM Rendu WHERE date < ?) AS last_week_active_students,
+        (SELECT AVG(Note) FROM Rendu) AS average_grade,
+        (SELECT AVG(Note) FROM Rendu WHERE date < ?) AS last_week_average_grade
+    `;
+
+    db.query(query, [formattedDate, formattedDate, formattedDate], (err, results) => {
+      if (err) {
+        console.error("Erreur lors de la récupération des statistiques:", err);
+        return res.status(500).json({ error: "Erreur serveur" });
+      }
+
+      const stats = results[0];
+      
+      // Calculer les pourcentages de variation
+      const exercisePercent = stats.last_week_exercises > 0 
+        ? Math.round(((stats.total_exercises - stats.last_week_exercises) / stats.last_week_exercises) * 100)
+        : 0;
+      
+      const studentsPercent = stats.last_week_active_students > 0 
+        ? Math.round(((stats.total_students - stats.last_week_active_students) / stats.last_week_active_students) * 100)
+        : 0;
+      
+      const gradePercent = stats.last_week_average_grade > 0 
+        ? Math.round(((stats.average_grade - stats.last_week_average_grade) / stats.last_week_average_grade) * 100)
+        : 0;
+
+      res.json({
+        totalExercises: stats.total_exercises || 0,
+        totalActiveStudents: stats.total_students || 0,
+        averageGrade: stats.average_grade ? parseFloat(stats.average_grade).toFixed(1) : 0,
+        exercisesLastWeek: exercisePercent,
+        studentsLastWeek: studentsPercent,
+        gradeLastWeek: gradePercent
+      });
+    });
+  } catch (error) {
+    console.error("Erreur serveur:", error);
+    res.status(500).json({ error: "Erreur serveur", message: error.message });
+  }
+});
 
 module.exports = router
 

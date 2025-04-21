@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Animation for fade in */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Dark mode */
+.dark {
+  color-scheme: dark;
+}
+
+/* Utility classes for the folded paper effect */
+.paper-fold {
+  position: relative;
+}
+
+.paper-fold::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 48px 48px 0;
+  border-color: transparent #f3f4f6 transparent transparent;
+  z-index: 10;
+}
+
+.dark .paper-fold::before {
+  border-color: transparent #374151 transparent transparent;
+}

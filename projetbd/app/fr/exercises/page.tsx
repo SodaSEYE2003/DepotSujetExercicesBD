@@ -18,7 +18,7 @@ import {
   Download,
   Loader2,
 } from "lucide-react"
-import Sidebar from "../../src/components/Sidebar"
+import Sidebar from "../../../src/components/Sidebar"
 import {
   Dialog,
   DialogContent,
@@ -52,6 +52,8 @@ type Exercise = {
 }
 
 export default function ExercisesPage() {
+  // Add this constant at the top of your component
+  const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
   // State
   const [userRole, setUserRole] = useState<UserRole>("professor")
   const [isDarkMode, setIsDarkMode] = useState(false)
@@ -133,6 +135,30 @@ export default function ExercisesPage() {
     }, 5000)
   }
 
+  // Fonction pour décoder les URLs hexadécimales (si nécessaire côté client)
+  const decodeHexString = (hexString: string | null | undefined): string | undefined => {
+    if (!hexString) return undefined
+
+    // Si c'est déjà une URL, la retourner telle quelle
+    if (typeof hexString === "string" && (hexString.startsWith("http://") || hexString.startsWith("https://"))) {
+      return hexString
+    }
+
+    // Vérifier si c'est une chaîne hexadécimale (commence par 0x)
+    if (typeof hexString === "string" && hexString.startsWith("0x")) {
+      // Supprimer le préfixe 0x et convertir en chaîne de caractères
+      const hex = hexString.substring(2)
+      let str = ""
+      for (let i = 0; i < hex.length; i += 2) {
+        const charCode = Number.parseInt(hex.substr(i, 2), 16)
+        str += String.fromCharCode(charCode)
+      }
+      return str
+    }
+
+    return hexString as string // Retourner la valeur d'origine
+  }
+
   // Fetch exercises from backend
   useEffect(() => {
     fetchExercises()
@@ -149,22 +175,22 @@ export default function ExercisesPage() {
 
       // Transform backend data to match our frontend format
       const formattedExercises = data.map((exercise: any) => ({
-        id: exercise._id,
-        title: exercise.titre,
+        id: exercise.id_Sujet,
+        title: exercise.Titre || "Sans titre",
         subtitle: exercise.sousTitre || "Pas de sous-titre",
-        category: exercise.categorie,
-        categoryClass: getCategoryClass(exercise.categorie),
-        date: new Date(exercise.dateCreation).toLocaleDateString("fr-FR", {
+        category: exercise.TypeDeSujet || "Non catégorisé",
+        categoryClass: getCategoryClass(exercise.TypeDeSujet),
+        date: new Date(exercise.DateDeDepot).toLocaleDateString("fr-FR", {
           day: "numeric",
           month: "long",
           year: "numeric",
         }),
-        status: exercise.statut,
-        statusClass: getStatusClass(exercise.statut),
-        fileUrl: exercise.fichierUrl,
-        correctionUrl: exercise.correctionUrl,
-        deadline: exercise.dateLimite ? new Date(exercise.dateLimite).toISOString().split("T")[0] : "",
-        description: exercise.description || "",
+        status: exercise.status === "publier" ? "Publié" : "Brouillon",
+        statusClass: getStatusClass(exercise.status === "publier" ? "Publié" : "Brouillon"),
+        fileUrl: decodeHexString(exercise.file),
+        correctionUrl: decodeHexString(exercise.correctionUrl),
+        deadline: exercise.Delai ? new Date(exercise.Delai).toISOString().split("T")[0] : "",
+        description: exercise.Description || "",
       }))
 
       setExercises(formattedExercises)
@@ -274,19 +300,36 @@ export default function ExercisesPage() {
     }
   }, [])
 
-  const validateFileType = (file: File): boolean => {
-    const allowedTypes = ["application/pdf"]
-    if (!allowedTypes.includes(file.type)) {
-      showNotification("error", "Seuls les fichiers PDF sont acceptés")
+  // Add this function after your existing functions
+  const validateFileSize = (file: File): boolean => {
+    if (file.size > MAX_FILE_SIZE) {
+      showNotification("error", `La taille du fichier ne doit pas dépasser ${formatFileSize(MAX_FILE_SIZE)}`)
       return false
     }
     return true
   }
 
+  // Then update your validateFileType function to also check size
+  const validateFile = (file: File): boolean => {
+    const allowedTypes = ["application/pdf"]
+    if (!allowedTypes.includes(file.type)) {
+      showNotification("error", "Seuls les fichiers PDF sont acceptés")
+      return false
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      showNotification("error", `La taille du fichier ne doit pas dépasser ${formatFileSize(MAX_FILE_SIZE)}`)
+      return false
+    }
+
+    return true
+  }
+
+  // Update your handleFileChange and handleDrop functions to use validateFile instead of validateFileType
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
-      if (validateFileType(file)) {
+      if (validateFile(file)) {
         setUploadedFile(file)
       } else if (fileInputRef.current) {
         fileInputRef.current.value = ""
@@ -297,7 +340,7 @@ export default function ExercisesPage() {
   const handleCorrectionFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
-      if (validateFileType(file)) {
+      if (validateFile(file)) {
         setCorrectionFile(file)
       } else if (correctionFileInputRef.current) {
         correctionFileInputRef.current.value = ""
@@ -323,7 +366,7 @@ export default function ExercisesPage() {
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0]
-      if (validateFileType(file)) {
+      if (validateFile(file)) {
         setUploadedFile(file)
       }
     }
@@ -400,7 +443,7 @@ export default function ExercisesPage() {
       formData.append("titre", newExercise.title)
       formData.append("sousTitre", newExercise.subtitle)
       formData.append("categorie", newExercise.category)
-      formData.append("statut", "Brouillon") // Par défaut, le statut est "Brouillon"
+      formData.append("statut", "Publié") // Par défaut, le statut est "brouillon"
       formData.append("description", newExercise.description)
 
       if (newExercise.deadline) {
@@ -459,6 +502,7 @@ export default function ExercisesPage() {
         setUploadProgress(0)
       })
 
+      // Modifier l'URL pour pointer vers la nouvelle route
       xhr.open("POST", "http://localhost:5000/sujets")
       xhr.send(formData)
     } catch (error) {
@@ -1265,7 +1309,8 @@ export default function ExercisesPage() {
               </p>
             </div>
 
-            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
+            {/* PDF Viewer for Exercise File */}
+            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30 mb-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-md font-medium text-gray-800 dark:text-white">Fichier d'exercice</h3>
                 {viewExercise?.fileUrl && (
@@ -1281,12 +1326,21 @@ export default function ExercisesPage() {
                 )}
               </div>
 
-              <div className="aspect-[16/9] bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center">
-                <FileText className="w-16 h-16 text-gray-400 dark:text-gray-500" />
-                <span className="ml-2 text-gray-600 dark:text-gray-300">Aperçu du PDF</span>
-              </div>
+              {viewExercise?.fileUrl ? (
+                <div className="pdf-container">
+                  <div className="w-full h-[500px] border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                    <iframe src={viewExercise.fileUrl} className="w-full h-full" title="Fichier d'exercice" />
+                  </div>
+                </div>
+              ) : (
+                <div className="aspect-[16/9] bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center">
+                  <FileText className="w-16 h-16 text-gray-400 dark:text-gray-500" />
+                  <span className="ml-2 text-gray-600 dark:text-gray-300">Aucun fichier disponible</span>
+                </div>
+              )}
             </div>
 
+            {/* PDF Viewer for Correction File */}
             {viewExercise?.correctionUrl && (
               <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30 mt-4">
                 <div className="flex items-center justify-between mb-2">
@@ -1302,9 +1356,10 @@ export default function ExercisesPage() {
                   </a>
                 </div>
 
-                <div className="aspect-[16/9] bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center">
-                  <FileText className="w-16 h-16 text-gray-400 dark:text-gray-500" />
-                  <span className="ml-2 text-gray-600 dark:text-gray-300">Aperçu du modèle de correction</span>
+                <div className="pdf-container">
+                  <div className="w-full h-[500px] border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                    <iframe src={viewExercise.correctionUrl} className="w-full h-full" title="Modèle de correction" />
+                  </div>
                 </div>
               </div>
             )}
@@ -1327,10 +1382,11 @@ export default function ExercisesPage() {
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Modifier l'exercice</DialogTitle>
-            <DialogDescription>Modifiez les informations de l'exercice.</DialogDescription>
+            <DialogDescription>Mettez à jour les informations de l'exercice.</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleEditSubmit} className="space-y-6 py-4">
+            {/* Informations de l'exercice */}
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
@@ -1406,62 +1462,6 @@ export default function ExercisesPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Fichier d'exercice actuel</Label>
-              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600">
-                <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-red-600 dark:text-red-400" />
-                </div>
-                <div className="ml-4 flex-1">
-                  <p className="text-sm font-medium text-gray-800 dark:text-white">{editExercise?.title}.pdf</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Remplacer le fichier (optionnel)</p>
-                </div>
-                <button
-                  type="button"
-                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded-lg transition-colors"
-                >
-                  Parcourir
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-2 mt-4">
-              <Label>Modèle de correction actuel</Label>
-              {editExercise?.correctionUrl ? (
-                <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600">
-                  <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                    <FileText className="w-5 h-5 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div className="ml-4 flex-1">
-                    <p className="text-sm font-medium text-gray-800 dark:text-white">Modèle de correction</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Remplacer le fichier (optionnel)</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded-lg transition-colors"
-                  >
-                    Parcourir
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600">
-                  <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                    <FileText className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-                  </div>
-                  <div className="ml-4 flex-1">
-                    <p className="text-sm font-medium text-gray-800 dark:text-white">Aucun modèle de correction</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Ajouter un fichier (optionnel)</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded-lg transition-colors"
-                  >
-                    Parcourir
-                  </button>
-                </div>
-              )}
-            </div>
-
             <DialogFooter>
               <button
                 type="button"
@@ -1479,10 +1479,10 @@ export default function ExercisesPage() {
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    <span>Enregistrement...</span>
+                    <span>Modification en cours...</span>
                   </>
                 ) : (
-                  <span>Enregistrer les modifications</span>
+                  <span>Modifier l'exercice</span>
                 )}
               </button>
             </DialogFooter>
@@ -1490,26 +1490,21 @@ export default function ExercisesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de confirmation de suppression */}
+      {/* Modal pour confirmer la suppression d'un exercice */}
       <Dialog open={!!deleteExercise} onOpenChange={() => setDeleteExercise(null)}>
-        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle>Confirmer la suppression</DialogTitle>
+            <DialogTitle>Supprimer l'exercice</DialogTitle>
             <DialogDescription>
               Êtes-vous sûr de vouloir supprimer cet exercice ? Cette action est irréversible.
             </DialogDescription>
           </DialogHeader>
 
           <div className="py-4">
-            <div className="flex items-center p-3 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/30">
-              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                <FileText className="w-5 h-5 text-red-600 dark:text-red-400" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-800 dark:text-white">{deleteExercise?.title}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{deleteExercise?.subtitle}</p>
-              </div>
-            </div>
+            <p className="text-gray-600 dark:text-gray-300">
+              Vous êtes sur le point de supprimer l'exercice :{" "}
+              <span className="font-medium">{deleteExercise?.title}</span>.
+            </p>
           </div>
 
           <DialogFooter>
@@ -1530,7 +1525,7 @@ export default function ExercisesPage() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  <span>Suppression...</span>
+                  <span>Suppression en cours...</span>
                 </>
               ) : (
                 <span>Supprimer</span>

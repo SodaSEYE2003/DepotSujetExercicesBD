@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { X, Sun, Moon, LogOut, Database, Home, BookOpen, FileText, BarChart2, Settings, Calendar, Users } from "lucide-react"
+import { X, Sun, Moon, LogOut, Database, Home, BookOpen, FileText, BarChart2, Settings, Calendar, TrendingUp } from "lucide-react"
 
 type UserRole = "professor" | "student"
 
@@ -20,24 +20,18 @@ export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSideba
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
   const navigationItems = [
-    { id: "dashboard", name: "Tableau de bord", icon: Home, path: "/dashboard" },
-    { id: "exercises", name: "Exercices", icon: BookOpen, path: "/exercises" },
-    {
-      id: "submissions",
-      name: userRole === "professor" ? "Soumissions" : "Mes soumissions",
-      icon: FileText,
-      path: "/submissions",
+    { id: "dashboard", name: "Tableau de bord", icon: Home, path: "/etudiant" },
+    { id: "exercises", name: "Exercices", icon: BookOpen, path: "/etudiant/exercices" },
+    { 
+      id: "submissions", 
+      name: "Mes soumissions",  // Changé pour l'étudiant
+      icon: FileText, 
+      path: "/etudiant/submissions" 
     },
-    // Nouvel élément pour la gestion des étudiants
-    {
-      id: "students",
-      name: "Gestion des Étudiants",
-      icon: Users,
-      path: "/students",
-    },
-    { id: "calendar", name: "Calendrier", icon: Calendar, path: "/calendar" },
-    { id: "analytics", name: "Analyses", icon: BarChart2, path: "/analytics" },
-    { id: "settings", name: "Paramètres", icon: Settings, path: "/settings" },
+    // Ajout de l'onglet progression
+    { id: "progress", name: "Ma progression", icon: TrendingUp, path: "/etudiant/progress" },
+    { id: "calendar", name: "Calendrier", icon: Calendar, path: "/etudiant/calendar" },
+    { id: "settings", name: "Paramètres", icon: Settings, path: "/etudiant/settings" },
   ]
 
   // Close logout confirmation when clicking outside
@@ -173,3 +167,4 @@ export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSideba
     </div>
   )
 }
+

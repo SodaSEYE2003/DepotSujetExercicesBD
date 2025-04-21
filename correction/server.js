@@ -2,6 +2,7 @@ require("dotenv").config()
 const express = require("express")
 const db = require("./config/db")
 const cors = require("cors")
+const bodyParser = require("body-parser")
 
 const app = express()
 
@@ -41,6 +42,10 @@ app.use("/etudiants", etudiantRoutes)
 
 const sujetRoutes = require("./routes/sujet")
 app.use("/sujets", sujetRoutes)
+
+// Ajouter la route pour les soumissions
+const soumissionRoutes = require("./routes/soumission")
+app.use("/soumissions", soumissionRoutes)
 
 // Route de test pour vérifier la connexion à la base de données
 app.get("/test-db", (req, res) => {
@@ -99,4 +104,3 @@ app.listen(PORT, () => {
     - MINIO_BUCKET_NAME: ${process.env.MINIO_BUCKET_NAME ? "défini" : "non défini"}
   `)
 })
-

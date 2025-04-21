@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { Menu, Bell, ChevronDown, User, Mail, Lock, BellIcon, Globe, Shield, Moon, Sun } from "lucide-react"
-import Sidebar from "../../src/components/Sidebar"
+import Sidebar from "../../../src/components/Sidebar"
 
 type UserRole = "professor" | "student"
 
