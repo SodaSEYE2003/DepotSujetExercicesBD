@@ -9,7 +9,7 @@ const app = express()
 // Configuration CORS plus permissive pour le développement
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "*", // Utilise la variable d'environnement ou autorise toutes les origines
+    origin:  "*", // Utilise la variable d'environnement ou autorise toutes les origines
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
