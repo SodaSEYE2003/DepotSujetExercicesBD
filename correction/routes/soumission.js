@@ -115,7 +115,7 @@ router.post("/", upload.single("fichier"), async (req, res) => {
 
     // Vérifier si l'étudiant a déjà soumis une réponse pour cet exercice
     db.query(
-      "SELECT * FROM soumission WHERE idSujet = ? AND idEtudiant = ?",
+      "SELECT * FROM soumission WHERE id = ? AND etudiant_id = ?",
       [id_sujet, id_etudiant],
       async (err, results) => {
         if (err) {
@@ -175,7 +175,7 @@ router.post("/", upload.single("fichier"), async (req, res) => {
           // Utiliser les noms de colonnes exacts de la table soumission
           const insertQuery = `
             INSERT INTO soumission (
-              idSujet, idEtudiant, fichier, commentaire
+              Sujet_id, Etudiant_id, fichier, commentaire
             ) VALUES (?, ?, ?, ?)
           `
 
@@ -230,11 +230,11 @@ router.get("/", (req, res) => {
   console.log("Récupération de toutes les soumissions")
 
   db.query(
-    `SELECT s.*, sj.Titre as sujet_titre, e.nom as etudiant_nom, e.prenom as etudiant_prenom 
-     FROM soumission s 
-     LEFT JOIN Sujet sj ON s.idSujet = sj.id_Sujet 
-     LEFT JOIN Etudiant e ON s.idEtudiant = e.Num_Etudiant 
-     ORDER BY s.dateSoumission DESC`,
+    `SELECT s.*, sj.Titre as sujet_titre, u.nom as etudiant_nom, u.prenom as etudiant_prenom 
+FROM soumission s 
+LEFT JOIN Sujet sj ON s.sujet_id = sj.id 
+LEFT JOIN Utilisateur u ON s.etudiant_id = u.id AND u.Num_Etudiant IS NOT NULL 
+ORDER BY s.dateSoumission DESC`,
     (err, results) => {
       if (err) {
         console.error("Erreur lors de la récupération des soumissions:", err)
@@ -252,11 +252,11 @@ router.get("/:id", (req, res) => {
   console.log(`Récupération de la soumission avec ID: ${req.params.id}`)
 
   db.query(
-    `SELECT s.*, sj.Titre as sujet_titre, e.nom as etudiant_nom, e.prenom as etudiant_prenom 
+    `SELECT s.*, sj.Titre as sujet_titre, u.nom as etudiant_nom, u.prenom as etudiant_prenom 
      FROM soumission s 
-     LEFT JOIN Sujet sj ON s.idSujet = sj.id_Sujet 
-     LEFT JOIN Etudiant e ON s.idEtudiant = e.Num_Etudiant 
-     WHERE s.id_soumission = ?`,
+     LEFT JOIN Sujet sj ON s.sujet_id = sj.id 
+     LEFT JOIN Utilisateur u ON s.etudiant_id = u.id 
+     WHERE s.id = ?`,
     [req.params.id],
     (err, result) => {
       if (err) {
@@ -306,12 +306,12 @@ router.put("/:id/evaluer", (req, res) => {
 })
 
 // Route pour vérifier si une soumission existe déjà pour un étudiant et un exercice
-router.get("/check/:idSujet/:idEtudiant", (req, res) => {
-  const { idSujet, idEtudiant } = req.params
+router.get("/check/:id/:idEtudiant", (req, res) => {
+  const { id, idEtudiant } = req.params
 
-  console.log(`Vérification de soumission existante pour sujet ${idSujet} et étudiant ${idEtudiant}`)
+  console.log(`Vérification de soumission existante pour sujet ${id} et étudiant ${idEtudiant}`)
 
-  db.query("SELECT * FROM soumission WHERE idSujet = ? AND idEtudiant = ?", [idSujet, idEtudiant], (err, results) => {
+  db.query("SELECT * FROM soumission WHERE id = ? AND idEtudiant = ?", [id, idEtudiant], (err, results) => {
     if (err) {
       console.error("Erreur lors de la vérification des soumissions:", err)
       return res.status(500).json({

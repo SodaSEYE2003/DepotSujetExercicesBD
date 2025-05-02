@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Professeur</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .exercise { background: #f0f8ff; padding: 15px; border-radius: 8px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <h1>Interface Professeur</h1>
+    
+    <div class="exercise">
+        <h3>Exercice actuel (ID: {{ exercise.id }})</h3>
+        <p>{{ exercise.description }}</p>
+    </div>
+    
+    <form method="post">
+        <p>En production: formulaire de création d'exercice</p>
+        <button type="submit">Mettre à jour l'exercice</button>
+    </form>
+    
+    <a href="/"><button>Retour</button></a>
+</body>
+</html>

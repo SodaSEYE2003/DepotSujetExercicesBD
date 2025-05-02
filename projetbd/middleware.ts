@@ -1,14 +1,50 @@
-import createMiddleware from "next-intl/middleware"
+import authConfig from "./auth.config"
+import NextAuth from "next-auth"
+import { DEFAULT_LOGIN_REDIRECT,
+  apiAuthPrefix,
+  authRoutes,
+  publicRoutes
+ } from "./routes";
 
-export default createMiddleware({
-  // A list of all locales that are supported
-  locales: ["en", "fr"],
+const {auth} = NextAuth(authConfig);
+ 
+export default auth(async (req) => {
+  
+  const {nextUrl } = req;
+  const session = await auth(); 
 
-  // If this locale is matched, pathnames work without a prefix (e.g. `/about`)
-  defaultLocale: "en",
+  const isLoggedIn = !!session;
+
+  const isApiAuthRoute = nextUrl.pathname.startsWith(apiAuthPrefix);
+  const isPublicRoute = publicRoutes.includes(nextUrl.pathname);
+  const isAuthRoute = authRoutes.includes(nextUrl.pathname);
+
+  if(isApiAuthRoute){
+    return;
+  }
+
+  if(isAuthRoute){
+    if(isLoggedIn){
+      return Response.redirect(new URL(DEFAULT_LOGIN_REDIRECT, nextUrl));
+    }
+    return;
+  }
+
+  if(!isLoggedIn && !isPublicRoute){
+    return Response.redirect(new URL("/auth/login", nextUrl));
+  }
+  
+  return;
 })
-
+ 
+// Optionally, don't invoke Middleware on some paths
 export const config = {
-  // Skip all paths that should not be internationalized
-  matcher: ["/((?!api|_next|.*\\..*).*)"],
+  matcher: [
+    // Skip Next.js internals and all static files, unless found in search params
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    // Always run for API routes
+    '/(api|trpc)(.*)',
+  ],
+  
 }
+

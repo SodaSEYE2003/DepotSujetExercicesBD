@@ -56,7 +56,7 @@ router.get("/stats", (req, res) => {
   const formattedLastWeek = lastWeek.toISOString().split('T')[0];
   
   // Récupération du nombre total d'étudiants
-  db.query("SELECT COUNT(*) AS totalStudents FROM Etudiant", (err, totalResults) => {
+  db.query("SELECT COUNT(*) AS totalStudents FROM utilisateurrole WHERE role_id = 1", (err, totalResults) => {
     if (err) return res.status(500).json(err);
     
     const totalStudents = totalResults[0].totalStudents;

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Résultats</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .result-section { margin: 20px 0; padding: 15px; border-radius: 8px; }
+        .score { background: #e6f7ff; }
+        .errors { background: #fff2f0; }
+        .correction { background: #f6ffed; }
+        .suggestions { background: #fff7e6; }
+        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Résultats de la Correction</h1>
+    
+    <div class="result-section score">
+        <h2>Note: {{ result.score }}/20</h2>
+    </div>
+    
+    {% if result.errors %}
+    <div class="result-section errors">
+        <h2>Erreurs détectées</h2>
+        <ul>
+            {% for error in result.errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    
+    <div class="result-section correction">
+        <h2>Correction</h2>
+        <pre>{{ result.correct_answer }}</pre>
+    </div>
+    
+    {% if result.suggestions %}
+    <div class="result-section suggestions">
+        <h2>Suggestions d'amélioration</h2>
+        <ul>
+            {% for suggestion in result.suggestions %}
+            <li>{{ suggestion }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    
+    {% if result.sql_analysis %}
+    <div class="result-section">
+        <h2>Analyse SQL</h2>
+        <pre>{{ result.sql_analysis | tojson(indent=2) }}</pre>
+    </div>
+    {% endif %}
+    
+    <a href="/"><button>Retour</button></a>
+</body>
+</html>

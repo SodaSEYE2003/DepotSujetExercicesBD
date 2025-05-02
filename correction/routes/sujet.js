@@ -9,27 +9,6 @@ const router = express.Router()
 // Configurer Multer (stockage en mémoire avant upload)
 const upload = multer({ storage: multer.memoryStorage() })
 
-// Fonction pour décoder les URLs hexadécimales
-function decodeHexString(hexString) {
-  try {
-    // Vérifier si c'est une chaîne hexadécimale (commence par 0x)
-    if (typeof hexString === "string" && hexString.startsWith("0x")) {
-      // Supprimer le préfixe 0x et convertir en chaîne de caractères
-      const hex = hexString.substring(2)
-      let str = ""
-      for (let i = 0; i < hex.length; i += 2) {
-        const charCode = Number.parseInt(hex.substr(i, 2), 16)
-        str += String.fromCharCode(charCode)
-      }
-      return str
-    }
-    return hexString // Retourner la valeur d'origine si ce n'est pas une chaîne hexadécimale
-  } catch (error) {
-    console.error("Erreur lors du décodage de l'URL hexadécimale:", error)
-    return hexString // En cas d'erreur, retourner la valeur d'origine
-  }
-}
-
 // Fonction pour vérifier si un bucket existe et le créer si nécessaire
 const ensureBucketExists = async (bucketName) => {
   try {
@@ -48,16 +27,25 @@ const ensureBucketExists = async (bucketName) => {
   }
 }
 
-// Fonction pour uploader un fichier vers MinIO
+// Modifier la fonction uploadToMinio pour ajouter des logs détaillés
 const uploadToMinio = (bucketName, fileName, fileBuffer, fileType) => {
   return new Promise((resolve, reject) => {
-    minioClient.putObject(bucketName, fileName, fileBuffer, fileType, (err, etag) => {
+    console.log("=== DÉBUT UPLOAD MINIO ===")
+    console.log(`Bucket: ${bucketName}, Nom du fichier: ${fileName}`)
+
+    minioClient.putObject(bucketName, fileName, fileBuffer, fileBuffer.length, fileType, (err, etag) => {
       if (err) {
         console.error(`Erreur upload MinIO (${bucketName}):`, err)
         reject(err)
       } else {
-        const fileUrl = `${process.env.MINIO_ENDPOINT || "http://localhost"}/${bucketName}/${fileName}`
+        // Construire le chemin d'accès au fichier en texte brut
+        const minioEndpoint = process.env.MINIO_ENDPOINT || "http://localhost:9000"
+        const fileUrl = `${minioEndpoint}/${bucketName}/${fileName}`
+
         console.log(`Fichier uploadé avec succès dans ${bucketName}:`, fileName)
+        console.log(`URL du fichier générée: ${fileUrl}`)
+        console.log("=== FIN UPLOAD MINIO ===")
+
         resolve(fileUrl)
       }
     })
@@ -141,25 +129,31 @@ router.post(
         }
       }
 
+      // Modifier la requête d'insertion pour s'assurer que les URLs sont stockées en texte brut
+      // Dans la route POST "/"
+      // Remplacer la partie de la requête d'insertion par:
+
       // Insérer les données dans la base de données
       const insertQuery = `
-      INSERT INTO Sujet (
-        id_Sujet, TypeDeSujet, DateDeDepot, Delai, 
-        file, Titre, correctionUrl, Description, sousTitre, status
-      ) VALUES (NULL, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?)
-    `
+  INSERT INTO Sujet (
+    id, TypeDeSujet, DateDeDepot, Delai, 
+    file, Titre, correctionUrl, Description, sousTitre, status
+  ) VALUES (NULL, ?, CURDATE(), ?, CAST(? AS CHAR), ?, CAST(? AS CHAR), ?, ?, ?)
+`
 
+      // Modifier la partie de la requête d'insertion dans la route POST "/"
+      // Ajouter des logs avant l'insertion dans la base de données
       db.query(
         insertQuery,
         [
           categorie || "SQL",
           dateLimite ? new Date(dateLimite) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 jours par défaut
-          exerciseFileUrl,
+          exerciseFileUrl || "", // Forcer le type CHAR
           titre,
-          correctionFileUrl,
+          correctionFileUrl || "", // Forcer le type CHAR
           description || null,
           sousTitre || null,
-          statut || "brouillon",
+          statut || "Publié",
         ],
         (err, result) => {
           if (err) {
@@ -170,7 +164,11 @@ router.post(
             })
           }
 
+          console.log("Valeurs insérées dans la base de données:")
+          console.log("- exerciseFileUrl:", exerciseFileUrl)
+          console.log("- correctionFileUrl:", correctionFileUrl)
           console.log("Sujet ajouté avec succès, ID:", result.insertId)
+
           res.status(201).json({
             message: "Sujet ajouté avec succès !",
             id: result.insertId,
@@ -197,26 +195,17 @@ router.get("/", (req, res) => {
       return res.status(500).json({ error: "Erreur serveur" })
     }
 
-    try {
-      // Décoder les URLs des fichiers
-      const decodedResults = results.map((sujet) => ({
-        ...sujet,
-        file: decodeHexString(sujet.file),
-        correctionUrl: decodeHexString(sujet.correctionUrl),
-      }))
-
-      res.json(decodedResults)
-    } catch (error) {
-      console.error("Erreur lors du décodage des URLs:", error)
-      // En cas d'erreur, renvoyer les résultats sans décodage
-      res.json(results)
-    }
+    console.log("Sujets récupérés:", results) // Log pour déboguer
+    res.json(results)
   })
 })
 
 // Route pour récupérer un sujet par ID
 router.get("/:id", (req, res) => {
-  db.query("SELECT * FROM Sujet WHERE id_Sujet = ?", [req.params.id], (err, result) => {
+  const sujetId = req.params.id
+  console.log(`Récupération du sujet avec ID: ${sujetId}`) // Log pour déboguer
+
+  db.query("SELECT * FROM Sujet WHERE id = ?", [sujetId], (err, result) => {
     if (err) {
       console.error("Erreur lors de la récupération du sujet:", err)
       return res.status(500).json({ error: "Erreur serveur" })
@@ -225,18 +214,8 @@ router.get("/:id", (req, res) => {
       return res.status(404).json({ error: "Sujet non trouvé" })
     }
 
-    try {
-      // Décoder les URLs des fichiers
-      const sujet = result[0]
-      sujet.file = decodeHexString(sujet.file)
-      sujet.correctionUrl = decodeHexString(sujet.correctionUrl)
-
-      res.json(sujet)
-    } catch (error) {
-      console.error("Erreur lors du décodage des URLs:", error)
-      // En cas d'erreur, renvoyer le résultat sans décodage
-      res.json(result[0])
-    }
+    console.log("Sujet récupéré:", result[0]) // Log pour déboguer
+    res.json(result[0])
   })
 })
 
@@ -249,11 +228,13 @@ router.put(
   ]),
   async (req, res) => {
     const sujetId = req.params.id
+    console.log(`Mise à jour du sujet avec ID: ${sujetId}`) // Log pour déboguer
 
     try {
       // Récupérer le sujet existant
-      db.query("SELECT * FROM Sujet WHERE id_Sujet = ?", [sujetId], async (err, results) => {
+      db.query("SELECT * FROM Sujet WHERE id = ?", [sujetId], async (err, results) => {
         if (err) {
+          console.error("Erreur lors de la récupération du sujet:", err)
           return res.status(500).json({ error: "Erreur lors de la récupération du sujet" })
         }
         if (results.length === 0) {
@@ -261,14 +242,7 @@ router.put(
         }
 
         const existingSujet = results[0]
-        // Décoder les URLs des fichiers existants
-        try {
-          existingSujet.file = decodeHexString(existingSujet.file)
-          existingSujet.correctionUrl = decodeHexString(existingSujet.correctionUrl)
-        } catch (error) {
-          console.error("Erreur lors du décodage des URLs existantes:", error)
-          // Continuer avec les URLs non décodées en cas d'erreur
-        }
+        console.log("Sujet existant:", existingSujet) // Log pour déboguer
 
         const { titre, sousTitre, categorie, statut, description, dateLimite } = req.body
 
@@ -312,34 +286,37 @@ router.put(
           }
         }
 
+        // Modifier la requête de mise à jour dans la route PUT "/:id"
+        // Remplacer la partie de la requête de mise à jour par:
+
         // Mettre à jour la base de données
         const updateQuery = `
-        UPDATE Sujet SET 
-          TypeDeSujet = ?, 
-          Delai = ?, 
-          file = ?, 
-          Titre = ?, 
-          correctionUrl = ?,
-          Description = ?, 
-          sousTitre = ?,
-          status = ?
-        WHERE id_Sujet = ?
-      `
+          UPDATE Sujet SET 
+            TypeDeSujet = ?, 
+            Delai = ?, 
+            file = ?, 
+            Titre = ?, 
+            correctionUrl = ?,
+            Description = ?, 
+            sousTitre = ?,
+            status = ?
+          WHERE id = ?
+        `
 
         db.query(
           updateQuery,
           [
             categorie || existingSujet.TypeDeSujet,
             dateLimite ? new Date(dateLimite) : existingSujet.Delai,
-            exerciseFileUrl,
+            exerciseFileUrl, // URL directe en texte brut
             titre || existingSujet.Titre,
-            correctionFileUrl,
+            correctionFileUrl, // URL directe en texte brut
             description || existingSujet.Description,
             sousTitre || existingSujet.sousTitre,
             statut || existingSujet.status,
             sujetId,
           ],
-          (updateErr) => {
+          (updateErr, updateResult) => {
             if (updateErr) {
               console.error("Erreur lors de la mise à jour du sujet:", updateErr)
               return res.status(500).json({
@@ -348,6 +325,7 @@ router.put(
               })
             }
 
+            console.log("Sujet mis à jour avec succès:", updateResult) // Log pour déboguer
             res.json({
               message: "Sujet mis à jour avec succès",
               id: sujetId,
@@ -367,10 +345,12 @@ router.put(
 // Route pour supprimer un sujet
 router.delete("/:id", (req, res) => {
   const sujetId = req.params.id
+  console.log(`Suppression du sujet avec ID: ${sujetId}`) // Log pour déboguer
 
   // Récupérer d'abord les URLs des fichiers pour pouvoir les supprimer de MinIO
-  db.query("SELECT file, correctionUrl FROM Sujet WHERE id_Sujet = ?", [sujetId], (err, results) => {
+  db.query("SELECT file, correctionUrl FROM Sujet WHERE id = ?", [sujetId], (err, results) => {
     if (err) {
+      console.error("Erreur lors de la récupération du sujet:", err)
       return res.status(500).json({ error: "Erreur lors de la récupération du sujet" })
     }
     if (results.length === 0) {
@@ -378,11 +358,13 @@ router.delete("/:id", (req, res) => {
     }
 
     // Supprimer le sujet de la base de données
-    db.query("DELETE FROM Sujet WHERE id_Sujet = ?", [sujetId], (deleteErr) => {
+    db.query("DELETE FROM Sujet WHERE id = ?", [sujetId], (deleteErr, deleteResult) => {
       if (deleteErr) {
+        console.error("Erreur lors de la suppression du sujet:", deleteErr)
         return res.status(500).json({ error: "Erreur lors de la suppression du sujet" })
       }
 
+      console.log("Sujet supprimé avec succès:", deleteResult) // Log pour déboguer
       res.json({ message: "Sujet supprimé avec succès" })
 
       // Optionnel: supprimer les fichiers de MinIO
@@ -391,14 +373,18 @@ router.delete("/:id", (req, res) => {
 
       try {
         // Décoder les URLs des fichiers
-        const fileUrl = decodeHexString(sujet.file)
-        const correctionUrl = decodeHexString(sujet.correctionUrl)
+        const fileUrl = sujet.file
+        const correctionUrl = sujet.correctionUrl
 
         // Supprimer le fichier d'exercice
         if (fileUrl && typeof fileUrl === "string") {
           try {
-            const fichierPath = fileUrl.split("/").slice(3).join("/")
-            minioClient.removeObject("sujets", fichierPath, (removeErr) => {
+            const urlParts = new URL(fileUrl)
+            const bucketAndObjectPath = urlParts.pathname.substring(1) // Enlever le premier slash
+            const [bucket, ...objectPathParts] = bucketAndObjectPath.split("/")
+            const objectPath = objectPathParts.join("/")
+
+            minioClient.removeObject(bucket, objectPath, (removeErr) => {
               if (removeErr) {
                 console.error("Erreur lors de la suppression du fichier d'exercice:", removeErr)
               }
@@ -411,8 +397,12 @@ router.delete("/:id", (req, res) => {
         // Supprimer le fichier de correction
         if (correctionUrl && typeof correctionUrl === "string") {
           try {
-            const correctionPath = correctionUrl.split("/").slice(3).join("/")
-            minioClient.removeObject("modele", correctionPath, (removeErr) => {
+            const urlParts = new URL(correctionUrl)
+            const bucketAndObjectPath = urlParts.pathname.substring(1) // Enlever le premier slash
+            const [bucket, ...objectPathParts] = bucketAndObjectPath.split("/")
+            const objectPath = objectPathParts.join("/")
+
+            minioClient.removeObject(bucket, objectPath, (removeErr) => {
               if (removeErr) {
                 console.error("Erreur lors de la suppression du fichier de correction:", removeErr)
               }
@@ -428,59 +418,41 @@ router.delete("/:id", (req, res) => {
   })
 })
 
-router.get("/", (req, res) => {
+// Route pour obtenir les statistiques
+router.get("/stats", (req, res) => {
   try {
     // Date d'il y a une semaine
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const formattedDate = oneWeekAgo.toISOString().split('T')[0]; // Format YYYY-MM-DD
+    const oneWeekAgo = new Date()
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
 
-    // Récupérer les statistiques actuelles et de la semaine dernière
-    const query = `
-      SELECT 
-        (SELECT COUNT(*) FROM Sujet) AS total_exercises,
-        (SELECT COUNT(*) FROM Sujet WHERE DateDeDepot < ?) AS last_week_exercises,
-        (SELECT COUNT(*) FROM User WHERE role = 'student') AS total_students,
-        (SELECT COUNT(DISTINCT id_User) FROM Rendu WHERE date < ?) AS last_week_active_students,
-        (SELECT AVG(Note) FROM Rendu) AS average_grade,
-        (SELECT AVG(Note) FROM Rendu WHERE date < ?) AS last_week_average_grade
-    `;
-
-    db.query(query, [formattedDate, formattedDate, formattedDate], (err, results) => {
+    // Nombre total de sujets
+    db.query("SELECT COUNT(*) AS total FROM Sujet", (err, totalResult) => {
       if (err) {
-        console.error("Erreur lors de la récupération des statistiques:", err);
-        return res.status(500).json({ error: "Erreur serveur" });
+        console.error("Erreur lors de la récupération du nombre total de sujets:", err)
+        return res.status(500).json({ error: "Erreur serveur" })
       }
 
-      const stats = results[0];
-      
-      // Calculer les pourcentages de variation
-      const exercisePercent = stats.last_week_exercises > 0 
-        ? Math.round(((stats.total_exercises - stats.last_week_exercises) / stats.last_week_exercises) * 100)
-        : 0;
-      
-      const studentsPercent = stats.last_week_active_students > 0 
-        ? Math.round(((stats.total_students - stats.last_week_active_students) / stats.last_week_active_students) * 100)
-        : 0;
-      
-      const gradePercent = stats.last_week_average_grade > 0 
-        ? Math.round(((stats.average_grade - stats.last_week_average_grade) / stats.last_week_average_grade) * 100)
-        : 0;
+      const totalSubjects = totalResult[0].total
 
-      res.json({
-        totalExercises: stats.total_exercises || 0,
-        totalActiveStudents: stats.total_students || 0,
-        averageGrade: stats.average_grade ? parseFloat(stats.average_grade).toFixed(1) : 0,
-        exercisesLastWeek: exercisePercent,
-        studentsLastWeek: studentsPercent,
-        gradeLastWeek: gradePercent
-      });
-    });
+      // Nombre de sujets créés la semaine dernière
+      db.query("SELECT COUNT(*) AS weekly FROM Sujet WHERE DateDeDepot >= ?", [oneWeekAgo], (err, weeklyResult) => {
+        if (err) {
+          console.error("Erreur lors de la récupération du nombre de sujets de la semaine dernière:", err)
+          return res.status(500).json({ error: "Erreur serveur" })
+        }
+
+        const weeklySubjects = weeklyResult[0].weekly
+
+        res.json({
+          totalSubjects: totalSubjects,
+          weeklySubjects: weeklySubjects,
+        })
+      })
+    })
   } catch (error) {
-    console.error("Erreur serveur:", error);
-    res.status(500).json({ error: "Erreur serveur", message: error.message });
+    console.error("Erreur lors de la récupération des statistiques:", error)
+    res.status(500).json({ error: "Erreur serveur", message: error.message })
   }
-});
+})
 
 module.exports = router
-
