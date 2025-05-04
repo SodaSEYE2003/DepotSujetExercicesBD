@@ -21,15 +21,16 @@ import Link from "next/link"
 
 type UserRole = "professor" | "student"
 
+// Adapter le type Submission à la structure réelle de la base de données
 type Submission = {
-  id_soumission: number
-  idSujet: number
-  idEtudiant: string
+  id: number
+  sujet_id: number
+  etudiant_id: string
   fichier: string
   commentaire: string | null
   dateSoumission: string
-  note: number | null
-  feedback: string | null
+  note?: number | null
+  feedback?: string | null
   sujet_titre: string
   etudiant_nom: string | null
   etudiant_prenom: string | null
@@ -48,6 +49,9 @@ export default function SubmissionsPage() {
   const [sortBy, setSortBy] = useState<"date" | "student" | "subject">("date")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
 
+  // Ajout d'un état pour stocker l'ID du professeur connecté
+  const [professorId, setProfessorId] = useState<number | null>(null)
+
   // Toggle functions
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode)
@@ -62,26 +66,65 @@ export default function SubmissionsPage() {
     setIsSidebarOpen(!isSidebarOpen)
   }
 
+  // Ajoutez cette fonction pour récupérer l'ID du professeur connecté
+  const fetchProfessorId = async () => {
+    try {
+      // Dans un environnement réel, vous récupéreriez l'ID du professeur depuis votre système d'authentification
+      // Pour cet exemple, nous utilisons une valeur fixe (1)
+      setProfessorId(1)
+      console.log("ID du professeur défini à:", 1)
+    } catch (error) {
+      console.error("Erreur lors de la récupération de l'ID du professeur:", error)
+    }
+  }
+
   // Fetch submissions
   const fetchSubmissions = async () => {
+    if (!professorId) {
+      console.log("Pas d'ID de professeur disponible, impossible de charger les soumissions")
+      return
+    }
+
     try {
       setIsLoading(true)
       setError(null)
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-      const response = await fetch(`${apiUrl}/soumissions`)
+      console.log(`Chargement des soumissions pour le professeur ${professorId}...`)
+
+      // Utiliser la route API pour récupérer les soumissions du professeur
+      const response = await fetch(`${apiUrl}/soumissions/professeur/${professorId}`)
 
       if (!response.ok) {
-        throw new Error(`Erreur: ${response.status}`)
+        const errorText = await response.text()
+        console.error(`Erreur HTTP: ${response.status}`, errorText)
+        throw new Error(`Erreur: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
+      console.log(`${data.length} soumissions récupérées`)
       setSubmissions(data)
       setIsLoading(false)
     } catch (err) {
       console.error("Erreur lors du chargement des soumissions:", err)
-      setError("Impossible de charger les soumissions. Veuillez réessayer plus tard.")
+      setError(`Impossible de charger les soumissions: ${err instanceof Error ? err.message : String(err)}`)
       setIsLoading(false)
+
+      // En cas d'erreur, essayer de charger toutes les soumissions comme fallback
+      try {
+        console.log("Tentative de récupération de toutes les soumissions comme fallback...")
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+        const response = await fetch(`${apiUrl}/soumissions`)
+
+        if (response.ok) {
+          const data = await response.json()
+          console.log(`Fallback: ${data.length} soumissions récupérées`)
+          setSubmissions(data)
+          setError("Affichage de toutes les soumissions (impossible de filtrer par professeur)")
+        }
+      } catch (fallbackErr) {
+        console.error("Échec du fallback:", fallbackErr)
+      }
     }
   }
 
@@ -99,7 +142,7 @@ export default function SubmissionsPage() {
 
   // Get status color based on evaluation status
   const getStatusColor = (submission: Submission) => {
-    if (submission.note !== null) {
+    if (submission.note !== null && submission.note !== undefined) {
       return "bg-green-500" // Évalué
     }
     return "bg-yellow-500" // En attente
@@ -107,7 +150,7 @@ export default function SubmissionsPage() {
 
   // Get status text based on evaluation status
   const getStatusText = (submission: Submission) => {
-    if (submission.note !== null) {
+    if (submission.note !== null && submission.note !== undefined) {
       return "Évalué"
     }
     return "En attente"
@@ -130,13 +173,13 @@ export default function SubmissionsPage() {
         (submission.sujet_titre && submission.sujet_titre.toLowerCase().includes(searchLower)) ||
         (submission.etudiant_nom && submission.etudiant_nom.toLowerCase().includes(searchLower)) ||
         (submission.etudiant_prenom && submission.etudiant_prenom.toLowerCase().includes(searchLower)) ||
-        (submission.idEtudiant && submission.idEtudiant.toLowerCase().includes(searchLower))
+        (submission.etudiant_id && submission.etudiant_id.toString().toLowerCase().includes(searchLower))
 
       // Filter by status
       const matchesStatus =
         filterStatus === "all" ||
-        (filterStatus === "pending" && submission.note === null) ||
-        (filterStatus === "evaluated" && submission.note !== null)
+        (filterStatus === "pending" && (submission.note === null || submission.note === undefined)) ||
+        (filterStatus === "evaluated" && submission.note !== null && submission.note !== undefined)
 
       return matchesSearch && matchesStatus
     })
@@ -172,10 +215,17 @@ export default function SubmissionsPage() {
     }
   }, [])
 
-  // Fetch data on component mount
+  // Fetch professor ID and then submissions
   useEffect(() => {
-    fetchSubmissions()
+    fetchProfessorId()
   }, [])
+
+  // Fetch submissions when professorId changes
+  useEffect(() => {
+    if (professorId !== null) {
+      fetchSubmissions()
+    }
+  }, [professorId])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-500">
@@ -201,7 +251,7 @@ export default function SubmissionsPage() {
                 >
                   <Menu className="w-6 h-6" />
                 </button>
-                <h1 className="text-lg font-semibold text-gray-800 dark:text-white">Soumissions des étudiants</h1>
+                <h1 className="text-lg font-semibold text-gray-800 dark:text-white">Mes soumissions d'étudiants</h1>
               </div>
 
               <div className="flex items-center space-x-3">
@@ -226,7 +276,7 @@ export default function SubmissionsPage() {
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 mb-6 border border-gray-100 dark:border-gray-700">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
                   <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 md:mb-0">
-                    Soumissions des étudiants
+                    Soumissions pour mes exercices
                   </h2>
 
                   <div className="flex flex-col sm:flex-row gap-3">
@@ -324,14 +374,14 @@ export default function SubmissionsPage() {
                     <p className="text-gray-500 dark:text-gray-400">
                       {searchQuery
                         ? "Aucune soumission ne correspond à votre recherche."
-                        : "Aucun étudiant n'a encore soumis de réponse."}
+                        : "Aucun étudiant n'a encore soumis de réponse à vos exercices."}
                     </p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredAndSortedSubmissions.map((submission) => (
                       <div
-                        key={submission.id_soumission}
+                        key={submission.id}
                         className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
                       >
                         <div className="p-4 border-b border-gray-100 dark:border-gray-700">
@@ -345,7 +395,7 @@ export default function SubmissionsPage() {
                                   ? `${submission.etudiant_prenom} ${submission.etudiant_nom}`
                                   : "Étudiant inconnu"}
                               </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">ID: {submission.idEtudiant}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">ID: {submission.etudiant_id}</p>
                             </div>
                           </div>
                         </div>
@@ -373,7 +423,7 @@ export default function SubmissionsPage() {
                                 {getStatusText(submission)}
                               </span>
                             </div>
-                            {submission.note !== null && (
+                            {submission.note !== null && submission.note !== undefined && (
                               <div className="text-sm font-medium text-gray-800 dark:text-white">
                                 Note: {submission.note}/20
                               </div>
@@ -399,7 +449,7 @@ export default function SubmissionsPage() {
                           </a>
                           {getStatusText(submission) === "En attente" && (
                             <button
-                              onClick={() => handleEvaluate(submission.id_soumission)}
+                              onClick={() => handleEvaluate(submission.id)}
                               className="p-2 text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-100 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
                               title="Évaluer"
                             >
@@ -407,7 +457,7 @@ export default function SubmissionsPage() {
                             </button>
                           )}
                           <Link
-                            href={`/submission-detail/${submission.id_soumission}`}
+                            href={`/submission-detail/${submission.id}`}
                             className="p-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-100 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors inline-flex"
                             title="Voir les détails"
                           >

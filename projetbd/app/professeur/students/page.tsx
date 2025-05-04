@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input"
 type UserRole = "professor" | "student"
 
 type Student = {
+  id: number
   Num_Etudiant: string
   nom: string
   prenom: string
@@ -150,12 +151,12 @@ export default function StudentsPage() {
 
     const query = searchQuery.toLowerCase().trim()
 
-    // Recherche dans plusieurs champs
+    // Vérifier que chaque propriété existe avant d'appeler toLowerCase()
     return (
-      student.nom.toLowerCase().includes(query) ||
-      student.prenom.toLowerCase().includes(query) ||
-      student.email.toLowerCase().includes(query) ||
-      student.Num_Etudiant.toLowerCase().includes(query) ||
+      (student.nom && student.nom.toLowerCase().includes(query)) ||
+      (student.prenom && student.prenom.toLowerCase().includes(query)) ||
+      (student.email && student.email.toLowerCase().includes(query)) ||
+      (student.Num_Etudiant && student.Num_Etudiant.toLowerCase().includes(query)) ||
       (student.classe && student.classe.toLowerCase().includes(query))
     )
   })
@@ -293,7 +294,7 @@ export default function StudentsPage() {
   }
 
   // Check if user is admin (for demonstration purposes)
-  const isAdmin = userRole !== "professor"
+  const isAdmin = false // Désactive la fonctionnalité de création d'étudiants pour tous les utilisateurs
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-500">
@@ -545,7 +546,7 @@ export default function StudentsPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                       {paginatedStudents.map((student) => (
                         <div
-                          key={student.Num_Etudiant}
+                          key={student.id} // Utilisation de l'ID unique comme clé
                           className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
                         >
                           <div className="p-4">

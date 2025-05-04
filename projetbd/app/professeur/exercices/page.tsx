@@ -52,6 +52,9 @@ type Exercise = {
 }
 
 export default function ExercisesPage() {
+  // Déclaration de la variable API_BASE_URL
+  const API_BASE_URL = "http://localhost:5000"
+
   // Add this constant at the top of your component
   const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
   // State
@@ -135,39 +138,88 @@ export default function ExercisesPage() {
     }, 5000)
   }
 
-  // Fonction pour gérer les URLs (maintenant stockées en texte brut)
+  // Modifions la fonction decodeHexString pour mieux gérer les URLs MinIO
   const decodeHexString = (hexString: string | null | undefined): string | undefined => {
     if (!hexString) return undefined
 
-    // Si c'est déjà une URL, la retourner telle quelle
-    if (typeof hexString === "string" && (hexString.startsWith("http://") || hexString.startsWith("https://"))) {
+    console.log("URL avant traitement:", hexString)
+
+    // Si c'est déjà une URL MinIO ou une URL standard, la retourner telle quelle
+    if (
+      typeof hexString === "string" &&
+      (hexString.startsWith("http://") || hexString.startsWith("https://") || hexString.includes("minio"))
+    ) {
+      console.log("URL détectée, retour sans modification:", hexString)
       return hexString
     }
 
-    // Pour la rétrocompatibilité, si c'est une chaîne hexadécimale (commence par 0x)
+    // Vérifier si c'est une chaîne hexadécimale (commence par 0x)
     if (typeof hexString === "string" && hexString.startsWith("0x")) {
-      // Supprimer le préfixe 0x et convertir en chaîne de caractères
-      const hex = hexString.substring(2)
-      let str = ""
-      for (let i = 0; i < hex.length; i += 2) {
-        const charCode = Number.parseInt(hex.substr(i, 2), 16)
-        str += String.fromCharCode(charCode)
+      try {
+        // Supprimer le préfixe 0x et convertir en chaîne de caractères
+        const hex = hexString.substring(2)
+        let str = ""
+        for (let i = 0; i < hex.length; i += 2) {
+          const charCode = Number.parseInt(hex.substr(i, 2), 16)
+          str += String.fromCharCode(charCode)
+        }
+        console.log("URL décodée depuis hex:", str)
+        return str
+      } catch (error) {
+        console.error("Erreur lors du décodage de l'URL hexadécimale:", error)
+        return hexString as string
       }
-      return str
     }
 
     return hexString as string // Retourner la valeur d'origine
   }
 
-  // Fetch exercises from backend
+  // Ajoutez un état pour stocker l'ID du professeur connecté
+  const [professorId, setProfessorId] = useState<number | null>(null)
+  // Ajoutez un état pour suivre si l'ID du professeur a été chargé
+  const [professorIdLoaded, setProfessorIdLoaded] = useState(false)
+
+  // Ajoutez cette fonction pour récupérer l'ID du professeur connecté
+  const fetchProfessorId = async () => {
+    try {
+      // Récupérer l'ID du professeur depuis la session
+      // Pour cet exemple, nous utilisons une valeur fixe (2)
+      // Dans un environnement de production, vous récupéreriez cette valeur depuis votre système d'authentification
+      setProfessorId(2) // Utilisez l'ID d'un professeur existant dans votre base de données
+      setProfessorIdLoaded(true) // Marquer l'ID comme chargé
+      console.log("ID du professeur défini:", 2)
+    } catch (error) {
+      console.error("Erreur lors de la récupération de l'ID du professeur:", error)
+      // Même en cas d'erreur, définir une valeur par défaut et marquer comme chargé
+      setProfessorId(2)
+      setProfessorIdLoaded(true)
+    }
+  }
+
+  // Appelez cette fonction au chargement du composant
   useEffect(() => {
-    fetchExercises()
+    fetchProfessorId()
   }, [])
 
+  // Fetch exercises from backend seulement après que l'ID du professeur soit chargé
+  useEffect(() => {
+    if (professorIdLoaded && professorId !== null) {
+      console.log("Chargement des exercices pour le professeur ID:", professorId)
+      fetchExercises()
+    }
+  }, [professorIdLoaded, professorId])
+
+  // Dans la fonction fetchExercises, ajoutons plus de logs pour déboguer
   const fetchExercises = async () => {
+    if (professorId === null) {
+      console.error("ID du professeur non disponible")
+      return
+    }
+
     setIsLoading(true)
     try {
-      const response = await fetch("http://localhost:5000/sujets")
+      // Utiliser la route spécifique pour récupérer les exercices du professeur connecté
+      const response = await fetch(`${API_BASE_URL}/sujets/professeur/${professorId}`)
       if (!response.ok) {
         throw new Error("Erreur lors de la récupération des exercices")
       }
@@ -180,15 +232,14 @@ export default function ExercisesPage() {
         // Vérifier si l'ID est présent et le convertir en nombre
         const exerciseId = exercise.id_Sujet || exercise.id
 
-        console.log(`Exercice ID: ${exerciseId}, Type: ${typeof exerciseId}`) // Log pour déboguer
-
-        // Les URLs sont maintenant en texte brut, mais on garde la fonction decodeHexString
-        // pour la rétrocompatibilité avec les anciennes données
+        // Décoder les URLs si elles sont en format hexadécimal
         const fileUrl = decodeHexString(exercise.file)
         const correctionUrl = exercise.correctionUrl ? decodeHexString(exercise.correctionUrl) : undefined
 
-        console.log(`File URL: ${fileUrl}`) // Log pour déboguer
-        console.log(`Correction URL: ${correctionUrl}`) // Log pour déboguer
+        console.log(`Exercice ID: ${exerciseId}, Titre: ${exercise.Titre}`)
+        console.log(`URL du fichier brute: ${exercise.file}`)
+        console.log(`URL du fichier décodée: ${fileUrl}`)
+        console.log(`URL de correction décodée: ${correctionUrl}`)
 
         return {
           id: exerciseId ? Number(exerciseId) : undefined,
@@ -210,7 +261,7 @@ export default function ExercisesPage() {
         }
       })
 
-      console.log("Exercices formatés:", formattedExercises) // Log pour déboguer
+      console.log("Exercices formatés:", formattedExercises)
 
       setExercises(formattedExercises)
     } catch (error) {
@@ -454,6 +505,11 @@ export default function ExercisesPage() {
       return
     }
 
+    if (professorId === null) {
+      showNotification("error", "ID du professeur non disponible. Veuillez vous reconnecter.")
+      return
+    }
+
     setIsSubmitting(true)
     setUploadProgress(0)
 
@@ -465,6 +521,10 @@ export default function ExercisesPage() {
       formData.append("categorie", newExercise.category)
       formData.append("statut", "Publié") // Par défaut, le statut est "Publié"
       formData.append("description", newExercise.description)
+
+      // Ajouter l'ID du professeur
+      formData.append("idProfesseur", professorId.toString())
+      console.log("ID du professeur ajouté au formulaire:", professorId)
 
       if (newExercise.deadline) {
         formData.append("dateLimite", new Date(newExercise.deadline).toISOString())
@@ -523,7 +583,7 @@ export default function ExercisesPage() {
       })
 
       // Modifier l'URL pour pointer vers la nouvelle route
-      xhr.open("POST", "http://localhost:5000/sujets")
+      xhr.open("POST", `${API_BASE_URL}/sujets`)
       xhr.send(formData)
     } catch (error) {
       console.error("Erreur:", error)
@@ -592,6 +652,11 @@ export default function ExercisesPage() {
       return
     }
 
+    if (professorId === null) {
+      showNotification("error", "ID du professeur non disponible. Veuillez vous reconnecter.")
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
@@ -603,13 +668,14 @@ export default function ExercisesPage() {
       formData.append("sousTitre", editFormData.subtitle)
       formData.append("categorie", editFormData.category)
       formData.append("description", editFormData.description)
+      formData.append("idProfesseur", professorId.toString())
 
       if (editFormData.deadline) {
         formData.append("dateLimite", new Date(editFormData.deadline).toISOString())
       }
 
       // Envoyer la requête au backend
-      const response = await fetch(`http://localhost:5000/sujets/${editExercise.id}`, {
+      const response = await fetch(`${API_BASE_URL}/sujets/${editExercise.id}`, {
         method: "PUT",
         body: formData,
       })
@@ -649,7 +715,7 @@ export default function ExercisesPage() {
       console.log(`Envoi de la requête DELETE à /sujets/${deleteExercise.id}`) // Log pour déboguer
 
       // Envoyer la requête au backend
-      const response = await fetch(`http://localhost:5000/sujets/${deleteExercise.id}`, {
+      const response = await fetch(`${API_BASE_URL}/sujets/${deleteExercise.id}`, {
         method: "DELETE",
       })
 
@@ -872,7 +938,7 @@ export default function ExercisesPage() {
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 mb-6 border border-gray-100 dark:border-gray-700">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
                   <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
-                    {userRole === "professor" ? "Gestion des exercices" : "Exercices disponibles"}
+                    {userRole === "professor" ? "Mes exercices" : "Exercices disponibles"}
                   </h2>
 
                   <div className="mt-4 md:mt-0 flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
@@ -1353,38 +1419,53 @@ export default function ExercisesPage() {
             </div>
 
             {/* PDF Viewer for Exercise File */}
-            {viewExercise?.fileUrl ? (
-              <div className="pdf-container">
-                <div className="w-full h-[500px] border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
-                  <iframe
-                    src={`${viewExercise.fileUrl}#toolbar=1&navpanes=1&scrollbar=1`}
-                    className="w-full h-full"
-                    title="Fichier d'exercice"
-                    frameBorder="0"
-                    loading="lazy"
-                    sandbox="allow-scripts allow-same-origin"
+            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-md font-medium text-gray-800 dark:text-white">Fichier d'exercice</h3>
+                {viewExercise?.fileUrl && (
+                  <a
+                    href={viewExercise.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 flex items-center"
                   >
-                    <p className="text-center p-4">
-                      Votre navigateur ne peut pas afficher le PDF.{" "}
-                      <a
-                        href={viewExercise.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-indigo-600 dark:text-indigo-400 hover:underline"
-                      >
-                        Téléchargez-le ici
-                      </a>
-                      .
-                    </p>
-                  </iframe>
+                    <Download className="w-4 h-4 mr-1" />
+                    <span className="text-sm">Télécharger</span>
+                  </a>
+                )}
+              </div>
+
+              {viewExercise?.fileUrl ? (
+                <div className="pdf-container">
+                  <div className="w-full h-[500px] border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                    <iframe
+                      src={viewExercise.fileUrl}
+                      className="w-full h-full"
+                      title="Fichier d'exercice"
+                      sandbox="allow-scripts allow-same-origin"
+                    >
+                      <p className="text-center p-4">
+                        Votre navigateur ne peut pas afficher le PDF.{" "}
+                        <a
+                          href={viewExercise.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          Téléchargez-le ici
+                        </a>
+                        .
+                      </p>
+                    </iframe>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="aspect-[16/9] bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center">
-                <FileText className="w-16 h-16 text-gray-400 dark:text-gray-500" />
-                <span className="ml-2 text-gray-600 dark:text-gray-300">Aucun fichier disponible</span>
-              </div>
-            )}
+              ) : (
+                <div className="aspect-[16/9] bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center">
+                  <FileText className="w-16 h-16 text-gray-400 dark:text-gray-500" />
+                  <span className="ml-2 text-gray-600 dark:text-gray-300">Aucun fichier disponible</span>
+                </div>
+              )}
+            </div>
 
             {/* PDF Viewer for Correction File */}
             {viewExercise?.correctionUrl && (
@@ -1405,11 +1486,9 @@ export default function ExercisesPage() {
                 <div className="pdf-container">
                   <div className="w-full h-[500px] border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
                     <iframe
-                      src={`${viewExercise.correctionUrl}#toolbar=1&navpanes=1&scrollbar=1`}
+                      src={viewExercise.correctionUrl}
                       className="w-full h-full"
                       title="Modèle de correction"
-                      frameBorder="0"
-                      loading="lazy"
                       sandbox="allow-scripts allow-same-origin"
                     >
                       <p className="text-center p-4">
@@ -1548,7 +1627,7 @@ export default function ExercisesPage() {
                     <span>Modification en cours...</span>
                   </>
                 ) : (
-                  <span>Modifier l'exercice</span>
+                  <span>Enregistrer les modifications</span>
                 )}
               </button>
             </DialogFooter>
@@ -1558,21 +1637,13 @@ export default function ExercisesPage() {
 
       {/* Modal pour confirmer la suppression d'un exercice */}
       <Dialog open={!!deleteExercise} onOpenChange={() => setDeleteExercise(null)}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Supprimer l'exercice</DialogTitle>
             <DialogDescription>
               Êtes-vous sûr de vouloir supprimer cet exercice ? Cette action est irréversible.
             </DialogDescription>
           </DialogHeader>
-
-          <div className="py-4">
-            <p className="text-gray-600 dark:text-gray-300">
-              Vous êtes sur le point de supprimer l'exercice :{" "}
-              <span className="font-medium">{deleteExercise?.title}</span>.
-            </p>
-          </div>
-
           <DialogFooter>
             <button
               type="button"
@@ -1585,7 +1656,7 @@ export default function ExercisesPage() {
             <button
               type="button"
               onClick={confirmDeleteExercise}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
               disabled={isSubmitting}
             >
               {isSubmitting ? (

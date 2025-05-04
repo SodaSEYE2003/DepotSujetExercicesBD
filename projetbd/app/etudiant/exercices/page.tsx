@@ -469,6 +469,7 @@ export default function SubjectsGallery() {
                 {/* Category Pills */}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
+                    key="all-categories"
                     className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
                       activeCategory === null
                         ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300"
@@ -593,6 +594,7 @@ export default function SubjectsGallery() {
 
                               <button
                                 onClick={() => {
+                                  console.log("Ouverture de l'exercice (grid view):", subject)
                                   setSelectedSubject(subject)
                                   setShowExerciseDetail(true)
                                 }}
@@ -675,6 +677,7 @@ export default function SubjectsGallery() {
                                 <div className="flex justify-end">
                                   <button
                                     onClick={() => {
+                                      console.log("Ouverture de l'exercice (cards view):", subject)
                                       setSelectedSubject(subject)
                                       setShowExerciseDetail(true)
                                     }}
@@ -758,6 +761,7 @@ export default function SubjectsGallery() {
                               <div className="flex justify-end">
                                 <button
                                   onClick={() => {
+                                    console.log("Ouverture de l'exercice (timeline view):", subject)
                                     setSelectedSubject(subject)
                                     setShowExerciseDetail(true)
                                   }}
@@ -836,7 +840,8 @@ export default function SubjectsGallery() {
               </button>
             </div>
             <div className="p-4">
-              <ExerciseDetail params={{ id: selectedSubject.id_Sujet.toString() }} />
+              {/* Assurez-vous que l'ID est correctement passé au composant ExerciseDetail */}
+              <ExerciseDetail params={{ id: selectedSubject.id_Sujet ? selectedSubject.id_Sujet.toString() : "" }} />
             </div>
           </div>
         </div>

@@ -42,12 +42,7 @@ export default function Sidebar({ userRole, isDarkMode, toggleDarkMode, isSideba
       path: "/professeur/submissions" 
     },
     // Nouvel élément pour la gestion des étudiants
-    {
-      id: "students",
-      name: "Gestion des Étudiants",
-      icon: Users,
-      path: "/students",
-    },
+    
     { id: "students", name: "Étudiants", icon: Users, path: "/professeur/students" },
     { id: "analytics", name: "Analyses", icon: BarChart2, path: "/professeur/analytics" },
     { id: "calendar", name: "Calendrier", icon: Calendar, path: "/professeur/calendar" },

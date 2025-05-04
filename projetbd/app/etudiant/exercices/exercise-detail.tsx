@@ -46,6 +46,7 @@ interface Subject {
 }
 
 export default function ExerciseDetail({ params }: { params: { id: string } }) {
+  console.log("ExerciseDetail params:", params) // Log pour déboguer
   const router = useRouter()
   const isEmbedded = !router.isReady // Si le router n'est pas prêt, c'est qu'on est en mode intégré
   const [isDarkMode, setIsDarkMode] = useState(false)
@@ -140,6 +141,11 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
 
   // Fonction pour vérifier si une soumission existe déjà
   const checkExistingSubmission = async (sujetId: string, etudiantId: string) => {
+    if (!sujetId || !etudiantId) {
+      console.error("ID du sujet ou de l'étudiant manquant")
+      return
+    }
+
     try {
       setIsCheckingSubmission(true)
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
@@ -294,21 +300,41 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
     const fetchSubject = async () => {
       try {
         setIsLoading(true)
+        if (!params || !params.id) {
+          console.error("ID du sujet manquant:", params)
+          setError("ID du sujet manquant")
+          setIsLoading(false)
+          return
+        }
+
+        console.log("Récupération du sujet avec ID:", params.id)
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+        console.log("URL de l'API:", `${apiUrl}/sujets/${params.id}`)
+
         const response = await fetch(`${apiUrl}/sujets/${params.id}`)
 
         if (!response.ok) {
+          console.error("Réponse API non OK:", response.status, response.statusText)
           throw new Error(`Erreur: ${response.status}`)
         }
 
         const data: Subject = await response.json()
+        console.log("Données du sujet reçues:", data)
+
+        // Vérifier si la Description est présente et non vide
+        if (!data.Description) {
+          console.warn("La description du sujet est vide ou manquante")
+        } else {
+          console.log("Description du sujet:", data.Description.substring(0, 100) + "...")
+        }
+
         setSubject(data)
 
         // Vérifier si la date limite est dépassée
         setIsDeadlinePassed(checkDeadlinePassed(data.Delai))
 
         // Vérifier si une soumission existe déjà pour cet étudiant et ce sujet
-        await checkExistingSubmission(params.id, etudiantId)
+        await checkExistingSubmission(params.id.toString(), etudiantId)
 
         setIsLoading(false)
       } catch (err) {
@@ -318,10 +344,13 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
       }
     }
 
-    if (params.id) {
+    if (params && params.id) {
       fetchSubject()
+    } else {
+      setError("ID du sujet manquant")
+      setIsLoading(false)
     }
-  }, [params.id, etudiantId])
+  }, [params, etudiantId])
 
   // Check system preference for dark mode on mount
   useEffect(() => {
@@ -599,7 +628,7 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
 
               <div className="prose dark:prose-invert max-w-none">
                 {subject.Description ? (
-                  <div dangerouslySetInnerHTML={{ __html: subject.Description }} />
+                  <div dangerouslySetInnerHTML={{ __html: subject.Description }} className="description-content" />
                 ) : (
                   <p>
                     Dans cet exercice, vous allez travailler avec une base de données comprenant plusieurs tables
@@ -727,12 +756,13 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                   <h3 className="text-md font-medium text-gray-800 dark:text-white mb-2">Contenu de l'exercice</h3>
                   <div className="prose dark:prose-invert prose-sm max-h-60 overflow-y-auto">
                     {subject.Description ? (
-                      <div dangerouslySetInnerHTML={{ __html: subject.Description }} />
+                      <div dangerouslySetInnerHTML={{ __html: subject.Description }} className="description-content" />
                     ) : (
                       <p>
                         Dans cet exercice, vous allez travailler avec une base de données comprenant plusieurs tables
                         interconnectées. Vous devrez écrire des requêtes SQL avancées pour extraire des informations
-                        pertinentes et résoudre des problèmes d&apos;analyse de données.
+                        pertinentes et résoudre des problèmes d&apos;analyse de des informations pertinentes et résoudre
+                        des problèmes d'analyse de données.
                       </p>
                     )}
                   </div>
@@ -1269,6 +1299,36 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
           </div>
         </div>
       </main>
+      <style jsx global>{`
+        .description-content {
+          width: 100%;
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+        }
+        
+        .description-content h1, 
+        .description-content h2, 
+        .description-content h3, 
+        .description-content h4 {
+          margin-top: 1rem;
+          margin-bottom: 0.5rem;
+          font-weight: 600;
+        }
+        
+        .description-content p {
+          margin-bottom: 1rem;
+        }
+        
+        .description-content ul, 
+        .description-content ol {
+          margin-left: 1.5rem;
+          margin-bottom: 1rem;
+        }
+        
+        .description-content li {
+          margin-bottom: 0.25rem;
+        }
+      `}</style>
     </div>
   )
 }
