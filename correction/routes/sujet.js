@@ -89,7 +89,7 @@ router.post(
       }
 
       // Extraire les données du formulaire
-      const { titre, sousTitre, categorie, statut, description, dateLimite } = req.body
+      const { titre, sousTitre, categorie, statut, description, dateLimite, idProfesseur } = req.body
 
       // Générer des noms de fichiers uniques
       const exerciseFileName = `${uuidv4()}_${exerciseFile.originalname}`
@@ -129,19 +129,14 @@ router.post(
         }
       }
 
-      // Modifier la requête d'insertion pour s'assurer que les URLs sont stockées en texte brut
-      // Dans la route POST "/"
-      // Remplacer la partie de la requête d'insertion par:
-
-      // Insérer les données dans la base de données
+      // Modifier la requête d'insertion pour inclure idProfesseur
       const insertQuery = `
   INSERT INTO Sujet (
     id, TypeDeSujet, DateDeDepot, Delai, 
-    file, Titre, correctionUrl, Description, sousTitre, status
-  ) VALUES (NULL, ?, CURDATE(), ?, CAST(? AS CHAR), ?, CAST(? AS CHAR), ?, ?, ?)
+    file, Titre, correctionUrl, Description, sousTitre, status, idProfesseur
+  ) VALUES (NULL, ?, CURDATE(), ?, CAST(? AS CHAR), ?, CAST(? AS CHAR), ?, ?, ?, ?)
 `
 
-      // Modifier la partie de la requête d'insertion dans la route POST "/"
       // Ajouter des logs avant l'insertion dans la base de données
       db.query(
         insertQuery,
@@ -154,6 +149,7 @@ router.post(
           description || null,
           sousTitre || null,
           statut || "Publié",
+          idProfesseur || null, // Ajouter l'ID du professeur
         ],
         (err, result) => {
           if (err) {
@@ -167,6 +163,7 @@ router.post(
           console.log("Valeurs insérées dans la base de données:")
           console.log("- exerciseFileUrl:", exerciseFileUrl)
           console.log("- correctionFileUrl:", correctionFileUrl)
+          console.log("- idProfesseur:", idProfesseur)
           console.log("Sujet ajouté avec succès, ID:", result.insertId)
 
           res.status(201).json({
@@ -187,15 +184,41 @@ router.post(
   },
 )
 
-// Route pour récupérer tous les sujets
+// Route pour récupérer tous les sujets d'un professeur
+router.get("/professeur/:idProfesseur", (req, res) => {
+  const idProfesseur = req.params.idProfesseur
+
+  db.query("SELECT * FROM Sujet WHERE idProfesseur = ? ORDER BY DateDeDepot DESC", [idProfesseur], (err, results) => {
+    if (err) {
+      console.error("Erreur lors de la récupération des sujets du professeur:", err)
+      return res.status(500).json({ error: "Erreur serveur" })
+    }
+
+    console.log(`Sujets récupérés pour le professeur ${idProfesseur}:`, results.length) // Log pour déboguer
+    res.json(results)
+  })
+})
+
+// Route pour récupérer tous les sujets (maintenue pour compatibilité)
 router.get("/", (req, res) => {
-  db.query("SELECT * FROM Sujet ORDER BY DateDeDepot DESC", (err, results) => {
+  // Si un ID de professeur est fourni en query parameter, filtrer par professeur
+  const idProfesseur = req.query.idProfesseur
+
+  let query = "SELECT * FROM Sujet ORDER BY DateDeDepot DESC"
+  let params = []
+
+  if (idProfesseur) {
+    query = "SELECT * FROM Sujet WHERE idProfesseur = ? ORDER BY DateDeDepot DESC"
+    params = [idProfesseur]
+  }
+
+  db.query(query, params, (err, results) => {
     if (err) {
       console.error("Erreur lors de la récupération des sujets:", err)
       return res.status(500).json({ error: "Erreur serveur" })
     }
 
-    console.log("Sujets récupérés:", results) // Log pour déboguer
+    console.log("Sujets récupérés:", results.length) // Log pour déboguer
     res.json(results)
   })
 })
@@ -244,7 +267,7 @@ router.put(
         const existingSujet = results[0]
         console.log("Sujet existant:", existingSujet) // Log pour déboguer
 
-        const { titre, sousTitre, categorie, statut, description, dateLimite } = req.body
+        const { titre, sousTitre, categorie, statut, description, dateLimite, idProfesseur } = req.body
 
         // Gérer les uploads de fichiers si présents
         let exerciseFileUrl = existingSujet.file
@@ -286,9 +309,6 @@ router.put(
           }
         }
 
-        // Modifier la requête de mise à jour dans la route PUT "/:id"
-        // Remplacer la partie de la requête de mise à jour par:
-
         // Mettre à jour la base de données
         const updateQuery = `
           UPDATE Sujet SET 
@@ -299,7 +319,8 @@ router.put(
             correctionUrl = ?,
             Description = ?, 
             sousTitre = ?,
-            status = ?
+            status = ?,
+            idProfesseur = ?
           WHERE id = ?
         `
 
@@ -314,6 +335,7 @@ router.put(
             description || existingSujet.Description,
             sousTitre || existingSujet.sousTitre,
             statut || existingSujet.status,
+            idProfesseur || existingSujet.idProfesseur, // Conserver l'ID du professeur existant si non fourni
             sujetId,
           ],
           (updateErr, updateResult) => {

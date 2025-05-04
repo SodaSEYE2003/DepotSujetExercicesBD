@@ -114,8 +114,9 @@ router.post("/", upload.single("fichier"), async (req, res) => {
     }
 
     // Vérifier si l'étudiant a déjà soumis une réponse pour cet exercice
+    // Utiliser les noms de colonnes corrects
     db.query(
-      "SELECT * FROM soumission WHERE id = ? AND etudiant_id = ?",
+      "SELECT * FROM soumission WHERE sujet_id = ? AND etudiant_id = ?",
       [id_sujet, id_etudiant],
       async (err, results) => {
         if (err) {
@@ -175,7 +176,7 @@ router.post("/", upload.single("fichier"), async (req, res) => {
           // Utiliser les noms de colonnes exacts de la table soumission
           const insertQuery = `
             INSERT INTO soumission (
-              Sujet_id, Etudiant_id, fichier, commentaire
+              sujet_id, etudiant_id, fichier, commentaire
             ) VALUES (?, ?, ?, ?)
           `
 
@@ -225,16 +226,48 @@ router.post("/", upload.single("fichier"), async (req, res) => {
   }
 })
 
+// Nouvelle route pour récupérer les soumissions d'un professeur spécifique
+router.get("/professeur/:idProfesseur", (req, res) => {
+  const idProfesseur = req.params.idProfesseur
+  console.log(`Récupération des soumissions pour le professeur avec ID: ${idProfesseur}`)
+
+  // Requête SQL pour récupérer uniquement les soumissions liées aux exercices créés par ce professeur
+  // Utiliser les tables utilisateur et utilisateurrole au lieu de Etudiant
+  const query = `
+    SELECT s.*, sj.Titre as sujet_titre, u.nom as etudiant_nom, u.prenom as etudiant_prenom 
+    FROM soumission s 
+    LEFT JOIN sujet sj ON s.sujet_id = sj.id 
+    LEFT JOIN utilisateur u ON s.etudiant_id = u.id 
+    LEFT JOIN utilisateurrole ur ON u.id = ur.utilisateur_id 
+    WHERE sj.idProfesseur = ? 
+    AND ur.role_id = 2  -- Supposons que role_id = 2 correspond au rôle étudiant
+    ORDER BY s.dateSoumission DESC
+  `
+
+  db.query(query, [idProfesseur], (err, results) => {
+    if (err) {
+      console.error("Erreur lors de la récupération des soumissions du professeur:", err)
+      console.error("Détails de l'erreur:", err.message, err.sql)
+      return res.status(500).json({ error: "Erreur serveur", details: err.message })
+    }
+
+    console.log(`${results.length} soumissions trouvées pour le professeur ${idProfesseur}`)
+    res.json(results)
+  })
+})
+
 // Route pour récupérer toutes les soumissions
 router.get("/", (req, res) => {
   console.log("Récupération de toutes les soumissions")
 
   db.query(
     `SELECT s.*, sj.Titre as sujet_titre, u.nom as etudiant_nom, u.prenom as etudiant_prenom 
-FROM soumission s 
-LEFT JOIN Sujet sj ON s.sujet_id = sj.id 
-LEFT JOIN Utilisateur u ON s.etudiant_id = u.id AND u.Num_Etudiant IS NOT NULL 
-ORDER BY s.dateSoumission DESC`,
+     FROM soumission s 
+     LEFT JOIN sujet sj ON s.sujet_id = sj.id 
+     LEFT JOIN utilisateur u ON s.etudiant_id = u.id 
+     LEFT JOIN utilisateurrole ur ON u.id = ur.utilisateur_id 
+     WHERE ur.role_id = 2  -- Supposons que role_id = 2 correspond au rôle étudiant
+     ORDER BY s.dateSoumission DESC`,
     (err, results) => {
       if (err) {
         console.error("Erreur lors de la récupération des soumissions:", err)
@@ -254,8 +287,8 @@ router.get("/:id", (req, res) => {
   db.query(
     `SELECT s.*, sj.Titre as sujet_titre, u.nom as etudiant_nom, u.prenom as etudiant_prenom 
      FROM soumission s 
-     LEFT JOIN Sujet sj ON s.sujet_id = sj.id 
-     LEFT JOIN Utilisateur u ON s.etudiant_id = u.id 
+     LEFT JOIN sujet sj ON s.sujet_id = sj.id 
+     LEFT JOIN utilisateur u ON s.etudiant_id = u.id 
      WHERE s.id = ?`,
     [req.params.id],
     (err, result) => {
@@ -287,7 +320,7 @@ router.put("/:id/evaluer", (req, res) => {
   console.log(`Évaluation de la soumission avec ID: ${soumissionId}`)
 
   db.query(
-    "UPDATE soumission SET note = ?, feedback = ? WHERE id_soumission = ?",
+    "UPDATE soumission SET note = ?, feedback = ? WHERE id = ?",
     [note, feedback || null, soumissionId],
     (err, result) => {
       if (err) {
@@ -306,12 +339,12 @@ router.put("/:id/evaluer", (req, res) => {
 })
 
 // Route pour vérifier si une soumission existe déjà pour un étudiant et un exercice
-router.get("/check/:id/:idEtudiant", (req, res) => {
-  const { id, idEtudiant } = req.params
+router.get("/check/:idSujet/:idEtudiant", (req, res) => {
+  const { idSujet, idEtudiant } = req.params
 
-  console.log(`Vérification de soumission existante pour sujet ${id} et étudiant ${idEtudiant}`)
+  console.log(`Vérification de soumission existante pour sujet ${idSujet} et étudiant ${idEtudiant}`)
 
-  db.query("SELECT * FROM soumission WHERE id = ? AND idEtudiant = ?", [id, idEtudiant], (err, results) => {
+  db.query("SELECT * FROM soumission WHERE sujet_id = ? AND etudiant_id = ?", [idSujet, idEtudiant], (err, results) => {
     if (err) {
       console.error("Erreur lors de la vérification des soumissions:", err)
       return res.status(500).json({
@@ -340,7 +373,7 @@ router.delete("/:id", async (req, res) => {
   console.log(`Suppression de la soumission avec ID: ${soumissionId}`)
 
   // D'abord, récupérer les informations de la soumission pour obtenir l'URL du fichier
-  db.query("SELECT * FROM soumission WHERE id_soumission = ?", [soumissionId], async (err, results) => {
+  db.query("SELECT * FROM soumission WHERE id = ?", [soumissionId], async (err, results) => {
     if (err) {
       console.error("Erreur lors de la récupération de la soumission:", err)
       return res.status(500).json({ error: "Erreur serveur", details: err.message })
@@ -372,7 +405,7 @@ router.delete("/:id", async (req, res) => {
       }
 
       // Supprimer l'entrée de la base de données
-      db.query("DELETE FROM soumission WHERE id_soumission = ?", [soumissionId], (deleteErr, deleteResult) => {
+      db.query("DELETE FROM soumission WHERE id = ?", [soumissionId], (deleteErr, deleteResult) => {
         if (deleteErr) {
           console.error("Erreur lors de la suppression de la soumission:", deleteErr)
           return res.status(500).json({ error: "Erreur serveur", details: deleteErr.message })
@@ -402,7 +435,7 @@ router.put("/:id", upload.single("fichier"), async (req, res) => {
   console.log("File:", req.file ? "Fichier reçu" : "Aucun fichier")
 
   // D'abord, récupérer les informations de la soumission existante
-  db.query("SELECT * FROM soumission WHERE id_soumission = ?", [soumissionId], async (err, results) => {
+  db.query("SELECT * FROM soumission WHERE id = ?", [soumissionId], async (err, results) => {
     if (err) {
       console.error("Erreur lors de la récupération de la soumission:", err)
       return res.status(500).json({ error: "Erreur serveur", details: err.message })
@@ -476,7 +509,7 @@ router.put("/:id", upload.single("fichier"), async (req, res) => {
       const updateQuery = `
         UPDATE soumission 
         SET fichier = ?, commentaire = ?, dateSoumission = NOW() 
-        WHERE id_soumission = ?
+        WHERE id = ?
       `
 
       db.query(
