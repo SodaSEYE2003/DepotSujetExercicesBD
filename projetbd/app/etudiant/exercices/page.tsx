@@ -26,14 +26,14 @@ import ExerciseDetail from "./exercise-detail"
 type UserRole = "professor" | "student"
 
 interface Subject {
-  id_Sujet: number
+  id: number // Changé de id_Sujet à id pour correspondre à la structure de la BD
   Titre: string
-  sousTitre: string
+  sousTitre: string | null
   Delai: string
   TypeDeSujet: string
-  Description: string
+  Description: string | null
   status: string
-  file: string
+  file: string | null
   correctionUrl: string | null
   DateDeDepot: string
 }
@@ -86,6 +86,7 @@ export default function SubjectsGallery() {
         }
 
         const data: Subject[] = await response.json()
+        console.log("Données récupérées:", data) // Pour déboguer
         setSubjects(data)
         setIsLoading(false)
       } catch (err) {
@@ -105,7 +106,7 @@ export default function SubjectsGallery() {
   const filteredSubjects = subjects.filter((subject) => {
     const matchesSearch =
       searchQuery === "" ||
-      subject.Titre.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      subject.Titre?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (subject.sousTitre && subject.sousTitre.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (subject.Description && subject.Description.toLowerCase().includes(searchQuery.toLowerCase()))
 
@@ -120,12 +121,15 @@ export default function SubjectsGallery() {
 
   // Format date
   const formatDate = (dateString: string) => {
+    if (!dateString) return "Date non définie"
     const date = new Date(dateString)
     return date.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
   }
 
   // Calculate days until deadline
   const getDaysUntilDeadline = (deadlineDate: string) => {
+    if (!deadlineDate) return 0
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const deadline = new Date(deadlineDate)
@@ -139,7 +143,7 @@ export default function SubjectsGallery() {
 
   // Get icon based on subject type
   const getSubjectIcon = (type: string) => {
-    switch (type.toLowerCase()) {
+    switch (type?.toLowerCase()) {
       case "sql":
         return <Database className="w-6 h-6" />
       case "nosql":
@@ -157,7 +161,7 @@ export default function SubjectsGallery() {
 
   // Get color based on subject type
   const getSubjectColor = (type: string) => {
-    switch (type.toLowerCase()) {
+    switch (type?.toLowerCase()) {
       case "sql":
         return "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
       case "nosql":
@@ -348,13 +352,13 @@ export default function SubjectsGallery() {
                   </div>
 
                   <div className="flex items-center space-x-2">
-                    <div className="relative">
+                    <div className="relative group">
                       <button className="flex items-center px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                         <Filter className="w-4 h-4 mr-2" />
                         <span>Catégorie</span>
                         <ChevronDown className="w-4 h-4 ml-2" />
                       </button>
-                      <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10 overflow-hidden hidden group-focus-within:block">
+                      <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10 overflow-hidden hidden group-focus-within:block group-hover:block">
                         <div className="p-1">
                           <button
                             className={`w-full text-left px-3 py-2 text-sm rounded-md ${
@@ -538,7 +542,7 @@ export default function SubjectsGallery() {
 
                         return (
                           <div
-                            key={subject.id_Sujet}
+                            key={subject.id}
                             className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border overflow-hidden transition-all duration-300 hover:shadow-md transform hover:-translate-y-1 ${
                               isUrgent ? "border-red-200 dark:border-red-800" : "border-gray-100 dark:border-gray-700"
                             }`}
@@ -559,7 +563,7 @@ export default function SubjectsGallery() {
                               </div>
 
                               <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2 line-clamp-2">
-                                {subject.Titre}
+                                {subject.Titre || "Sans titre"}
                               </h3>
 
                               {subject.sousTitre && (
@@ -618,7 +622,7 @@ export default function SubjectsGallery() {
 
                         return (
                           <div
-                            key={subject.id_Sujet}
+                            key={subject.id}
                             className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border overflow-hidden transition-all duration-300 hover:shadow-md ${
                               isUrgent ? "border-red-200 dark:border-red-800" : "border-gray-100 dark:border-gray-700"
                             }`}
@@ -635,7 +639,7 @@ export default function SubjectsGallery() {
 
                               <div className="p-6 flex-1">
                                 <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
-                                  {subject.Titre}
+                                  {subject.Titre || "Sans titre"}
                                 </h3>
 
                                 {subject.sousTitre && (
@@ -707,7 +711,7 @@ export default function SubjectsGallery() {
 
                           return (
                             <div
-                              key={subject.id_Sujet}
+                              key={subject.id}
                               className={`relative bg-white dark:bg-gray-800 rounded-xl shadow-sm border p-6 transition-all duration-300 hover:shadow-md ${
                                 isUrgent ? "border-red-200 dark:border-red-800" : "border-gray-100 dark:border-gray-700"
                               }`}
@@ -720,7 +724,9 @@ export default function SubjectsGallery() {
                               </div>
 
                               <div className="flex justify-between items-start mb-4">
-                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">{subject.Titre}</h3>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+                                  {subject.Titre || "Sans titre"}
+                                </h3>
                                 <span
                                   className={`text-xs px-2 py-1 rounded-full ${getSubjectColor(subject.TypeDeSujet)}`}
                                 >
@@ -831,7 +837,9 @@ export default function SubjectsGallery() {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center overflow-y-auto">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-7xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-gray-800 dark:text-white">{selectedSubject.Titre}</h2>
+              <h2 className="text-xl font-bold text-gray-800 dark:text-white">
+                {selectedSubject.Titre || "Sans titre"}
+              </h2>
               <button
                 onClick={() => setShowExerciseDetail(false)}
                 className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -841,7 +849,7 @@ export default function SubjectsGallery() {
             </div>
             <div className="p-4">
               {/* Assurez-vous que l'ID est correctement passé au composant ExerciseDetail */}
-              <ExerciseDetail params={{ id: selectedSubject.id_Sujet ? selectedSubject.id_Sujet.toString() : "" }} />
+              <ExerciseDetail params={{ id: selectedSubject.id ? selectedSubject.id.toString() : "" }} />
             </div>
           </div>
         </div>

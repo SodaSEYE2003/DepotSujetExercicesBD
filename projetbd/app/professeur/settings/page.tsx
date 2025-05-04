@@ -3,10 +3,21 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
 import { Menu, Bell, ChevronDown, User, Mail, Lock, BellIcon, Globe, Shield, Moon, Sun } from "lucide-react"
 import Sidebar from "../../../src/components/Sidebar"
-
-type UserRole = "professor" | "student"
+// Fonction simple pour afficher des notifications
+const toast = {
+  default: (message: string) => {
+    alert(message)
+  },
+  success: (message: string) => {
+    alert("✅ " + message)
+  },
+  error: (message: string) => {
+    alert("❌ " + message)
+  },
+}
 
 type SettingsSection = {
   id: string
@@ -15,20 +26,22 @@ type SettingsSection = {
 }
 
 export default function SettingsPage() {
+  const { data: session, status } = useSession()
+
   // State
-  const [userRole, setUserRole] = useState<UserRole>("professor")
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [activeSection, setActiveSection] = useState("profile")
   const [emailNotifications, setEmailNotifications] = useState(true)
   const [appNotifications, setAppNotifications] = useState(true)
   const [language, setLanguage] = useState("fr")
+  const [isLoading, setIsLoading] = useState(false)
 
   // Form state
   const [formData, setFormData] = useState({
-    firstName: userRole === "professor" ? "Sarah" : "Thomas",
-    lastName: userRole === "professor" ? "Martin" : "Dubois",
-    email: userRole === "professor" ? "sarah.martin@universite.fr" : "thomas.dubois@etudiant.fr",
+    firstName: "",
+    lastName: "",
+    email: "",
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
@@ -42,6 +55,21 @@ export default function SettingsPage() {
     { id: "appearance", title: "Apparence", icon: Moon },
     { id: "language", title: "Langue", icon: Globe },
   ]
+
+  // Load user data when session is available
+  useEffect(() => {
+    if (status === "authenticated" && session?.user) {
+      // Split the name into first and last name (assuming format is "FirstName LastName")
+      const nameParts = session.user.name?.split(" ") || ["", ""]
+
+      setFormData({
+        ...formData,
+        firstName: nameParts[0] || "",
+        lastName: nameParts.slice(1).join(" ") || "",
+        email: session.user.email || "",
+      })
+    }
+  }, [session, status])
 
   // Toggle functions
   const toggleDarkMode = () => {
@@ -66,32 +94,75 @@ export default function SettingsPage() {
     })
   }
 
-  const handleProfileSubmit = (e: React.FormEvent) => {
+  const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Simulate API call to update profile
-    console.log("Profile updated:", formData)
-    // Show success message
-    alert("Profil mis à jour avec succès")
+    setIsLoading(true)
+
+    try {
+      // Here you would implement the API call to update the user profile
+      // For example:
+      // const response = await fetch('/api/user/profile', {
+      //   method: 'PUT',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({
+      //     firstName: formData.firstName,
+      //     lastName: formData.lastName,
+      //     email: formData.email
+      //   })
+      // })
+
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      toast.success("Profil mis à jour avec succès")
+    } catch (error) {
+      toast.error("Une erreur est survenue lors de la mise à jour du profil.")
+      console.error("Erreur lors de la mise à jour du profil:", error)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Validate passwords
+
     if (formData.newPassword !== formData.confirmPassword) {
-      alert("Les mots de passe ne correspondent pas")
+      toast.error("Les mots de passe ne correspondent pas.")
       return
     }
-    // Simulate API call to update password
-    console.log("Password updated")
-    // Reset password fields
-    setFormData({
-      ...formData,
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    })
-    // Show success message
-    alert("Mot de passe mis à jour avec succès")
+
+    setIsLoading(true)
+
+    try {
+      // Here you would implement the API call to update the password
+      // For example:
+      // const response = await fetch('/api/user/password', {
+      //   method: 'PUT',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({
+      //     currentPassword: formData.currentPassword,
+      //     newPassword: formData.newPassword
+      //   })
+      // })
+
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      // Reset password fields
+      setFormData({
+        ...formData,
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      })
+
+      toast.success("Mot de passe mis à jour avec succès")
+    } catch (error) {
+      toast.error("Une erreur est survenue lors de la mise à jour du mot de passe.")
+      console.error("Erreur lors de la mise à jour du mot de passe:", error)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   // Check system preference for dark mode on mount
@@ -102,12 +173,21 @@ export default function SettingsPage() {
     }
   }, [])
 
+  // Show loading state while session is loading
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-500">
       <div className="flex">
         {/* Sidebar */}
         <Sidebar
-          userRole={userRole}
+          userRole={(session?.user?.role?.toLowerCase() as "professor" | "student") || "professor"}
           isDarkMode={isDarkMode}
           toggleDarkMode={toggleDarkMode}
           isSidebarOpen={isSidebarOpen}
@@ -181,7 +261,7 @@ export default function SettingsPage() {
                             <div className="flex items-center mb-4">
                               <div className="relative mr-4">
                                 <img
-                                  src="https://i.pravatar.cc/100?img=8"
+                                  src={session?.user?.image || "https://i.pravatar.cc/100?img=8"}
                                   alt="Avatar"
                                   className="w-20 h-20 rounded-full border-2 border-indigo-500"
                                 />
@@ -265,7 +345,7 @@ export default function SettingsPage() {
                               <input
                                 type="text"
                                 id="role"
-                                value={userRole === "professor" ? "Professeur" : "Étudiant"}
+                                value={session?.user?.role === "PROFESSEUR" ? "Professeur" : "Étudiant"}
                                 disabled
                                 className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-600 text-gray-800 dark:text-white cursor-not-allowed"
                               />
@@ -275,9 +355,19 @@ export default function SettingsPage() {
                           <div className="flex justify-end">
                             <button
                               type="submit"
-                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                              disabled={isLoading}
+                              className={`px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors ${
+                                isLoading ? "opacity-70 cursor-not-allowed" : ""
+                              }`}
                             >
-                              Enregistrer les modifications
+                              {isLoading ? (
+                                <span className="flex items-center">
+                                  <span className="animate-spin mr-2 h-4 w-4 border-t-2 border-b-2 border-white rounded-full"></span>
+                                  Enregistrement...
+                                </span>
+                              ) : (
+                                "Enregistrer les modifications"
+                              )}
                             </button>
                           </div>
                         </form>
@@ -514,9 +604,19 @@ export default function SettingsPage() {
                           <div className="mt-8 flex justify-end">
                             <button
                               type="submit"
-                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                              disabled={isLoading}
+                              className={`px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors ${
+                                isLoading ? "opacity-70 cursor-not-allowed" : ""
+                              }`}
                             >
-                              Mettre à jour le mot de passe
+                              {isLoading ? (
+                                <span className="flex items-center">
+                                  <span className="animate-spin mr-2 h-4 w-4 border-t-2 border-b-2 border-white rounded-full"></span>
+                                  Mise à jour...
+                                </span>
+                              ) : (
+                                "Mettre à jour le mot de passe"
+                              )}
                             </button>
                           </div>
                         </form>
@@ -699,4 +799,3 @@ export default function SettingsPage() {
     </div>
   )
 }
-
