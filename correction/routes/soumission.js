@@ -107,11 +107,19 @@ router.post("/", upload.single("fichier"), async (req, res) => {
 
   try {
     // Extraire les données du formulaire
-    const { id_sujet, id_etudiant, commentaire } = req.body
+    const { id_sujet, etudiant_id, commentaire } = req.body
+    const id_etudiant = etudiant_id // Pour compatibilité avec le code existant
 
     if (!id_sujet) {
       return res.status(400).json({ error: "L'identifiant du sujet est requis" })
     }
+
+    if (!id_etudiant) {
+      console.error("Erreur: ID étudiant manquant dans la requête")
+      return res.status(400).json({ error: "L'identifiant de l'étudiant est requis" })
+    }
+
+    console.log("ID étudiant reçu:", id_etudiant)
 
     // Vérifier si l'étudiant a déjà soumis une réponse pour cet exercice
     // Utiliser les noms de colonnes corrects
@@ -174,6 +182,12 @@ router.post("/", upload.single("fichier"), async (req, res) => {
 
           // Insérer les données dans la base de données
           // Utiliser les noms de colonnes exacts de la table soumission
+          // Vérifier que l'ID étudiant est bien fourni
+          if (!id_etudiant) {
+            console.error("Erreur: ID étudiant manquant")
+            return res.status(400).json({ error: "L'identifiant de l'étudiant est requis" })
+          }
+
           const insertQuery = `
             INSERT INTO soumission (
               sujet_id, etudiant_id, fichier, commentaire
@@ -184,7 +198,7 @@ router.post("/", upload.single("fichier"), async (req, res) => {
             insertQuery,
             [
               id_sujet,
-              id_etudiant || null, // Si l'ID étudiant n'est pas fourni, utiliser NULL
+              id_etudiant, // L'ID étudiant est obligatoire
               submissionFileUrl,
               commentaire || null,
             ],

@@ -22,8 +22,6 @@ import {
   UploadCloud,
   X,
   Check,
-  Award,
-  Brain,
   Loader2,
   ArrowLeft,
   Edit,
@@ -33,20 +31,19 @@ import {
 } from "lucide-react"
 
 interface Subject {
-  id_Sujet: number
+  id: number // Changé de id_Sujet à id pour correspondre à la structure de la BD
   Titre: string
-  sousTitre: string
+  sousTitre: string | null
   Delai: string
   TypeDeSujet: string
-  Description: string
+  Description: string | null
   status: string
-  file: string
+  file: string | null
   correctionUrl: string | null
   DateDeDepot: string
 }
 
 export default function ExerciseDetail({ params }: { params: { id: string } }) {
-  console.log("ExerciseDetail params:", params) // Log pour déboguer
   const router = useRouter()
   const isEmbedded = !router.isReady // Si le router n'est pas prêt, c'est qu'on est en mode intégré
   const [isDarkMode, setIsDarkMode] = useState(false)
@@ -68,8 +65,34 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
   const [showExerciseContent, setShowExerciseContent] = useState(true)
   const [isDeadlinePassed, setIsDeadlinePassed] = useState(false)
 
-  // Simuler un ID d'étudiant (à remplacer par des valeurs réelles)
-  const etudiantId = "E12345" // Ceci devrait venir de l'authentification
+  // Remplacer cette ligne:
+  // const etudiantId = "E12345" // Ceci devrait venir de l'authentification
+
+  // Par ce code qui récupère l'ID de l'utilisateur connecté:
+  const [etudiantId, setEtudiantId] = useState<number | null>(null)
+
+  // Ajouter un useEffect pour récupérer l'ID de l'utilisateur connecté
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const session = await fetch("/api/auth/session")
+        const sessionData = await session.json()
+
+        if (sessionData && sessionData.user && sessionData.user.id) {
+          setEtudiantId(sessionData.user.id)
+          console.log("ID de l'étudiant connecté:", sessionData.user.id)
+        } else {
+          console.error("Impossible de récupérer l'ID de l'utilisateur connecté")
+          setError("Vous devez être connecté pour soumettre un exercice")
+        }
+      } catch (err) {
+        console.error("Erreur lors de la récupération des données utilisateur:", err)
+        setError("Erreur lors de la récupération des données utilisateur")
+      }
+    }
+
+    fetchUserData()
+  }, [])
 
   // Methods
   const toggleDarkMode = () => {
@@ -115,12 +138,15 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
 
   // Format date
   const formatDate = (dateString: string) => {
+    if (!dateString) return "Date non définie"
     const date = new Date(dateString)
     return date.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
   }
 
   // Calculate days until deadline
   const getDaysUntilDeadline = (deadlineDate: string) => {
+    if (!deadlineDate) return 0
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const deadline = new Date(deadlineDate)
@@ -134,22 +160,27 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
 
   // Vérifier si la date limite est dépassée
   const checkDeadlinePassed = (deadlineDate: string) => {
+    if (!deadlineDate) return false
+
     const today = new Date()
     const deadline = new Date(deadlineDate)
     return today > deadline
   }
 
   // Fonction pour vérifier si une soumission existe déjà
-  const checkExistingSubmission = async (sujetId: string, etudiantId: string) => {
-    if (!sujetId || !etudiantId) {
-      console.error("ID du sujet ou de l'étudiant manquant")
+  // Remplacer:
+  // const checkExistingSubmission = async (sujetId: string, etudiantId: string) => {
+
+  // Par:
+  const checkExistingSubmission = async (sujetId: string, studentId: number | null) => {
+    if (!studentId) {
+      console.log("ID étudiant non disponible, impossible de vérifier les soumissions existantes")
       return
     }
-
     try {
       setIsCheckingSubmission(true)
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-      const response = await fetch(`${apiUrl}/soumissions/check/${sujetId}/${etudiantId}`)
+      const response = await fetch(`${apiUrl}/soumissions/check/${sujetId}/${studentId}`)
 
       if (!response.ok) {
         throw new Error(`Erreur: ${response.status}`)
@@ -300,41 +331,27 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
     const fetchSubject = async () => {
       try {
         setIsLoading(true)
-        if (!params || !params.id) {
-          console.error("ID du sujet manquant:", params)
-          setError("ID du sujet manquant")
-          setIsLoading(false)
-          return
-        }
-
-        console.log("Récupération du sujet avec ID:", params.id)
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-        console.log("URL de l'API:", `${apiUrl}/sujets/${params.id}`)
-
         const response = await fetch(`${apiUrl}/sujets/${params.id}`)
 
         if (!response.ok) {
-          console.error("Réponse API non OK:", response.status, response.statusText)
           throw new Error(`Erreur: ${response.status}`)
         }
 
         const data: Subject = await response.json()
-        console.log("Données du sujet reçues:", data)
-
-        // Vérifier si la Description est présente et non vide
-        if (!data.Description) {
-          console.warn("La description du sujet est vide ou manquante")
-        } else {
-          console.log("Description du sujet:", data.Description.substring(0, 100) + "...")
-        }
-
+        console.log("Données du sujet récupérées:", data) // Pour déboguer
         setSubject(data)
 
         // Vérifier si la date limite est dépassée
         setIsDeadlinePassed(checkDeadlinePassed(data.Delai))
 
         // Vérifier si une soumission existe déjà pour cet étudiant et ce sujet
-        await checkExistingSubmission(params.id.toString(), etudiantId)
+        // Remplacer:
+        // await checkExistingSubmission(params.id, etudiantId)
+        // Par:
+        if (etudiantId) {
+          await checkExistingSubmission(params.id, etudiantId)
+        }
 
         setIsLoading(false)
       } catch (err) {
@@ -344,13 +361,10 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
       }
     }
 
-    if (params && params.id) {
+    if (params.id) {
       fetchSubject()
-    } else {
-      setError("ID du sujet manquant")
-      setIsLoading(false)
     }
-  }, [params, etudiantId])
+  }, [params.id, etudiantId])
 
   // Check system preference for dark mode on mount
   useEffect(() => {
@@ -385,8 +399,17 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
       const formData = new FormData()
 
       // Ajouter les métadonnées avec les noms de champs corrects
-      formData.append("id_sujet", subject.id_Sujet.toString()) // Sera mappé à idSujet dans le backend
-      formData.append("id_etudiant", etudiantId) // Sera mappé à idEtudiant dans le backend
+      formData.append("id_sujet", subject.id.toString()) // Sera mappé à idSujet dans le backend
+      // Dans la fonction handleSubmit, remplacer:
+      // formData.append("id_etudiant", etudiantId)
+      // Par:
+      if (!etudiantId) {
+        setSubmitError("Impossible de soumettre: ID étudiant non disponible")
+        setIsSubmitting(false)
+        return
+      }
+      formData.append("etudiant_id", etudiantId.toString()) // Utiliser le nom de colonne correct
+      console.log("ID étudiant envoyé dans la soumission:", etudiantId)
       formData.append("commentaire", comment)
 
       // Ajouter le fichier de soumission
@@ -573,7 +596,9 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
               <li aria-current="page">
                 <div className="flex items-center">
                   <ChevronRight className="w-5 h-5 text-gray-400" />
-                  <span className="ml-1 text-sm font-medium text-gray-500 dark:text-gray-400">{subject.Titre}</span>
+                  <span className="ml-1 text-sm font-medium text-gray-500 dark:text-gray-400">
+                    {subject.Titre || "Sans titre"}
+                  </span>
                 </div>
               </li>
             </ol>
@@ -600,8 +625,8 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                   {deadlineStatus}
                 </span>
               </div>
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">{subject.Titre}</h1>
-              <p className="text-gray-600 dark:text-gray-300">{subject.sousTitre}</p>
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">{subject.Titre || "Sans titre"}</h1>
+              <p className="text-gray-600 dark:text-gray-300">{subject.sousTitre || ""}</p>
             </div>
 
             <div className="mt-4 md:mt-0 flex flex-col items-end">
@@ -628,7 +653,7 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
 
               <div className="prose dark:prose-invert max-w-none">
                 {subject.Description ? (
-                  <div dangerouslySetInnerHTML={{ __html: subject.Description }} className="description-content" />
+                  <div dangerouslySetInnerHTML={{ __html: subject.Description }} />
                 ) : (
                   <p>
                     Dans cet exercice, vous allez travailler avec une base de données comprenant plusieurs tables
@@ -756,13 +781,12 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                   <h3 className="text-md font-medium text-gray-800 dark:text-white mb-2">Contenu de l'exercice</h3>
                   <div className="prose dark:prose-invert prose-sm max-h-60 overflow-y-auto">
                     {subject.Description ? (
-                      <div dangerouslySetInnerHTML={{ __html: subject.Description }} className="description-content" />
+                      <div dangerouslySetInnerHTML={{ __html: subject.Description }} />
                     ) : (
                       <p>
                         Dans cet exercice, vous allez travailler avec une base de données comprenant plusieurs tables
                         interconnectées. Vous devrez écrire des requêtes SQL avancées pour extraire des informations
-                        pertinentes et résoudre des problèmes d&apos;analyse de des informations pertinentes et résoudre
-                        des problèmes d'analyse de données.
+                        pertinentes et résoudre des problèmes d&apos;analyse de données.
                       </p>
                     )}
                   </div>
@@ -1018,12 +1042,15 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                         disabled={isSubmitting}
                       >
                         {isSubmitting ? (
-                          <div className="flex items-center">
-                            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                            <span>Mise à jour en cours...</span>
-                          </div>
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Mise à jour...
+                          </>
                         ) : (
-                          <span>Mettre à jour</span>
+                          <>
+                            <Check className="w-4 h-4 mr-2" />
+                            Mettre à jour
+                          </>
                         )}
                       </button>
                       <button
@@ -1032,7 +1059,7 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                         className="flex-1 py-2 px-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg transition-colors duration-300"
                         disabled={isSubmitting}
                       >
-                        Annuler la modification
+                        Annuler
                       </button>
                     </div>
                   </form>
@@ -1057,8 +1084,8 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                       <div className="flex items-start">
                         <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 mr-2 flex-shrink-0" />
                         <div>
-                          <h4 className="text-md font-medium text-red-800 dark:text-red-300">Date limite dépassée</h4>
-                          <p className="text-sm text-red-700 dark:text-red-200 mt-1">
+                          <h4 className="text-sm font-medium text-red-800 dark:text-red-300">Date limite dépassée</h4>
+                          <p className="text-xs text-red-700 dark:text-red-200 mt-1">
                             La date limite de soumission pour cet exercice est dépassée. Vous ne pouvez plus soumettre
                             de réponse.
                           </p>
@@ -1100,8 +1127,8 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                       {uploadedFile && (
                         <div className="mb-6">
                           <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600">
-                            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                              <FileText className="w-5 h-5 text-red-600 dark:text-red-400" />
+                            <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                              <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                             </div>
                             <div className="ml-4 flex-1">
                               <div className="flex items-center justify-between">
@@ -1153,42 +1180,21 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                         />
                       </div>
 
-                      <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800/30 rounded-lg p-3 mb-4">
-                        <div className="flex items-start">
-                          <div className="flex-shrink-0">
-                            <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                              <path
-                                fillRule="evenodd"
-                                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                          </div>
-                          <div className="ml-3">
-                            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-300">Information</h3>
-                            <div className="mt-1 text-sm text-yellow-700 dark:text-yellow-200">
-                              <p>
-                                Vous pourrez modifier ou annuler votre soumission jusqu'à la date limite de l'exercice.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
                       <button
                         type="submit"
-                        className={`w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors duration-300 flex items-center justify-center ${
-                          !uploadedFile || isSubmitting ? "opacity-70 cursor-not-allowed" : ""
-                        }`}
-                        disabled={!uploadedFile || isSubmitting}
+                        className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors duration-300 flex items-center justify-center"
+                        disabled={isSubmitting || !uploadedFile}
                       >
                         {isSubmitting ? (
-                          <div className="flex items-center">
-                            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                            <span>Soumission en cours...</span>
-                          </div>
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Soumission en cours...
+                          </>
                         ) : (
-                          <span>Soumettre</span>
+                          <>
+                            <UploadCloud className="w-4 h-4 mr-2" />
+                            Soumettre
+                          </>
                         )}
                       </button>
                     </form>
@@ -1197,138 +1203,63 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
               )}
             </div>
 
-            {/* Section Statut */}
+            {/* Informations sur la date limite */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-100 dark:border-gray-700">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Statut</h2>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Informations</h2>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                      <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
-                    </div>
-                    <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Exercice publié</span>
-                  </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(subject.DateDeDepot)}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div
-                      className={`w-8 h-8 rounded-full ${
-                        daysUntilDeadline < 0
-                          ? "bg-red-100 dark:bg-red-900/30"
-                          : daysUntilDeadline <= 3
-                            ? "bg-yellow-100 dark:bg-yellow-900/30"
-                            : "bg-yellow-100 dark:bg-yellow-900/30"
-                      } flex items-center justify-center`}
-                    >
-                      <Clock
-                        className={`w-4 h-4 ${
-                          daysUntilDeadline < 0
-                            ? "text-red-600 dark:text-red-400"
-                            : daysUntilDeadline <= 3
-                              ? "text-yellow-600 dark:text-yellow-400"
-                              : "text-yellow-600 dark:text-yellow-400"
-                        }`}
-                      />
-                    </div>
-                    <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Date limite</span>
-                  </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(subject.Delai)}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div
-                      className={`w-8 h-8 rounded-full ${
-                        existingSubmission ? "bg-green-100 dark:bg-green-900/30" : "bg-gray-100 dark:bg-gray-700"
-                      } flex items-center justify-center`}
-                    >
-                      <FileText
-                        className={`w-4 h-4 ${
-                          existingSubmission ? "text-green-600 dark:text-green-400" : "text-gray-600 dark:text-gray-400"
-                        }`}
-                      />
-                    </div>
-                    <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Soumission</span>
-                  </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {existingSubmission ? formatDate(existingSubmission.dateSoumission) : "En attente"}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                      <Award className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                    </div>
-                    <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Évaluation</span>
-                  </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">En attente</span>
-                </div>
-              </div>
-
-              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                <h3 className="text-md font-medium text-gray-800 dark:text-white mb-3">Progression</h3>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-2">
+                <div className="flex items-center">
                   <div
-                    className="bg-indigo-600 h-2.5 rounded-full"
-                    style={{ width: existingSubmission ? "50%" : "25%" }}
-                  ></div>
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      daysUntilDeadline < 0
+                        ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+                        : daysUntilDeadline <= 3
+                          ? "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400"
+                          : "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
+                    }`}
+                  >
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-800 dark:text-white">Date limite</p>
+                    <p
+                      className={`text-xs ${
+                        daysUntilDeadline < 0
+                          ? "text-red-600 dark:text-red-400"
+                          : daysUntilDeadline <= 3
+                            ? "text-orange-600 dark:text-orange-400"
+                            : "text-green-600 dark:text-green-400"
+                      }`}
+                    >
+                      {formatDate(subject.Delai)} ({deadlineStatus})
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {existingSubmission ? "2 étapes sur 4 complétées" : "1 étape sur 4 complétée"}
-                </p>
+
+                <div className="flex items-center">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-800 dark:text-white">Type d'exercice</p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400">{subject.TypeDeSujet}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-800 dark:text-white">Professeur</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Prof. Sarah Martin</p>
+                  </div>
+                </div>
               </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-100 dark:border-gray-700">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Aide IA</h2>
-
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                Besoin d&apos;aide pour comprendre cet exercice ? Notre assistant IA peut vous guider sans vous donner
-                directement les réponses.
-              </p>
-
-              <button className="w-full py-2 px-4 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg transition-colors duration-300 flex items-center justify-center">
-                <Brain className="w-5 h-5 mr-2" />
-                <span>Demander de l&apos;aide</span>
-              </button>
             </div>
           </div>
         </div>
       </main>
-      <style jsx global>{`
-        .description-content {
-          width: 100%;
-          overflow-wrap: break-word;
-          word-wrap: break-word;
-        }
-        
-        .description-content h1, 
-        .description-content h2, 
-        .description-content h3, 
-        .description-content h4 {
-          margin-top: 1rem;
-          margin-bottom: 0.5rem;
-          font-weight: 600;
-        }
-        
-        .description-content p {
-          margin-bottom: 1rem;
-        }
-        
-        .description-content ul, 
-        .description-content ol {
-          margin-left: 1.5rem;
-          margin-bottom: 1rem;
-        }
-        
-        .description-content li {
-          margin-bottom: 0.25rem;
-        }
-      `}</style>
     </div>
   )
 }
