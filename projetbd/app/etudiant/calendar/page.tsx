@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-
-import { Menu, Bell, ChevronDown, ChevronLeft, ChevronRight, Plus, Clock, Database, FileText } from "lucide-react"
-import Sidebar from "@/components/Sidebar-etudiant";
+import { Menu, Bell, ChevronDown, ChevronLeft, ChevronRight, Clock, Database, FileText, Loader } from "lucide-react"
+import Sidebar from "@/components/Sidebar-etudiant"
+import axios from "axios"
 
 type UserRole = "professor" | "student"
 
@@ -18,23 +18,31 @@ interface CalendarEvent {
 interface Subject {
   id_Sujet: number
   Titre: string
-  sousTitre: string
-  Delai: string
-  TypeDeSujet: string
-  Description: string
-  status: string
-  file: string
-  correctionUrl: string | null
+  sousTitre?: string
+  Delai?: string
+  TypeDeSujet?: string
+  Description?: string
+  status?: string
+  file?: string
+  correctionUrl?: string | null
 }
 
 export default function CalendarPage() {
   // State
-  const [userRole, setUserRole] = useState<UserRole>("student")
+  const [userRole] = useState<UserRole>("student")
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-  const [events, setEvents] = useState<CalendarEvent[]>([
+  const [events, setEvents] = useState<CalendarEvent[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [useMockData, setUseMockData] = useState(false)
+
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+
+  // Données de démonstration pour contourner l'erreur d'API
+  const mockEvents: CalendarEvent[] = [
     {
       id: "1",
       title: "Requêtes SQL avancées",
@@ -63,9 +71,21 @@ export default function CalendarPage() {
       type: "evaluation",
       description: "Évaluation des soumissions pour l'exercice sur la normalisation",
     },
-  ])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+    {
+      id: "5",
+      title: "Date limite: Algorithmes de tri",
+      date: new Date(2025, 2, 20), // March 20, 2025
+      type: "deadline",
+      description: "Date limite pour soumettre l'exercice sur les algorithmes de tri",
+    },
+    {
+      id: "6",
+      title: "Programmation web",
+      date: new Date(2025, 3, 5), // April 5, 2025
+      type: "exercise",
+      description: "Publication de l'exercice sur la programmation web",
+    },
+  ]
 
   // Toggle functions
   const toggleDarkMode = () => {
@@ -86,34 +106,45 @@ export default function CalendarPage() {
     const fetchSubjects = async () => {
       try {
         setIsLoading(true)
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
-        const response = await fetch(`${apiUrl}/sujets`)
+        setError(null)
 
-        if (!response.ok) {
-          throw new Error(`Erreur: ${response.status}`)
+        // Utiliser les données de démonstration par défaut
+        setUseMockData(true)
+        setEvents(mockEvents)
+
+        // Essayer de récupérer les données de l'API en arrière-plan
+        try {
+          const response = await axios.get(`${API_BASE_URL}/sujets`)
+
+          if (response.data && Array.isArray(response.data)) {
+            // Convert subjects to calendar events
+            const subjectEvents: CalendarEvent[] = response.data
+              .filter((subject: Subject) => subject.Delai) // Filtrer les sujets sans date limite
+              .map((subject: Subject) => ({
+                id: `subject-${subject.id_Sujet}`,
+                title: `Date limite: ${subject.Titre || "Sans titre"}`,
+                date: new Date(subject.Delai || new Date()),
+                type: "deadline",
+                description: `Date limite pour soumettre: ${subject.sousTitre || subject.Titre || "Sans titre"}`,
+              }))
+
+            if (subjectEvents.length > 0) {
+              // Combine with static events (keep only non-deadline mock events)
+              const staticEvents = mockEvents.filter((event) => event.type !== "deadline")
+              setEvents([...staticEvents, ...subjectEvents])
+              setUseMockData(false)
+            }
+          }
+        } catch (apiError) {
+          console.log("API non disponible, utilisation des données de démonstration")
+          // On continue avec les données de démonstration
         }
-
-        const subjects: Subject[] = await response.json()
-
-        // Convert subjects to calendar events
-        const subjectEvents: CalendarEvent[] = subjects.map((subject) => ({
-          id: `subject-${subject.id_Sujet}`,
-          title: `Date limite: ${subject.Titre}`,
-          date: new Date(subject.Delai),
-          type: "deadline",
-          description: `Date limite pour soumettre: ${subject.sousTitre || subject.Titre}`,
-        }))
-
-        // Combine with static events
-        setEvents((prev) => {
-          const staticEvents = prev.filter((event) => !event.id.startsWith("subject-"))
-          return [...staticEvents, ...subjectEvents]
-        })
 
         setIsLoading(false)
       } catch (err) {
         console.error("Erreur lors du chargement des sujets:", err)
-        setError("Impossible de charger les dates limites des sujets. L'API pourrait être inaccessible.")
+        setError("Impossible de charger les dates limites des sujets. Utilisation des données de démonstration.")
+        setEvents(mockEvents)
         setIsLoading(false)
       }
     }
@@ -237,7 +268,7 @@ export default function CalendarPage() {
       <div className="flex">
         {/* Sidebar */}
         <Sidebar
-          userRole={userRole}
+          userRole="student"
           isDarkMode={isDarkMode}
           toggleDarkMode={toggleDarkMode}
           isSidebarOpen={isSidebarOpen}
@@ -260,6 +291,11 @@ export default function CalendarPage() {
               </div>
 
               <div className="flex items-center space-x-3">
+                {useMockData && (
+                  <div className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 text-xs rounded-full">
+                    Mode démo
+                  </div>
+                )}
                 <button className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                   <Bell className="w-6 h-6 text-gray-500 dark:text-gray-400" />
                   <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
@@ -281,7 +317,7 @@ export default function CalendarPage() {
               {isLoading && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 mb-6 border border-gray-100 dark:border-gray-700 flex justify-center">
                   <div className="flex items-center text-gray-500 dark:text-gray-400">
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    <Loader className="w-5 h-5 mr-2 animate-spin" />
                     Chargement des événements...
                   </div>
                 </div>

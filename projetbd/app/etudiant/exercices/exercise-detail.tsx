@@ -31,7 +31,7 @@ import {
 } from "lucide-react"
 
 interface Subject {
-  id: number // Changé de id_Sujet à id pour correspondre à la structure de la BD
+  id: number
   Titre: string
   sousTitre: string | null
   Delai: string
@@ -41,6 +41,9 @@ interface Subject {
   file: string | null
   correctionUrl: string | null
   DateDeDepot: string
+  idProfesseur: number | null
+  professeurNom?: string
+  professeurPrenom?: string
 }
 
 export default function ExerciseDetail({ params }: { params: { id: string } }) {
@@ -183,7 +186,8 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
       const response = await fetch(`${apiUrl}/soumissions/check/${sujetId}/${studentId}`)
 
       if (!response.ok) {
-        throw new Error(`Erreur: ${response.status}`)
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `Erreur: ${response.status}`)
       }
 
       const data = await response.json()
@@ -192,6 +196,7 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
       }
     } catch (error) {
       console.error("Erreur lors de la vérification des soumissions:", error)
+      // Don't set an error state here, just log it
     } finally {
       setIsCheckingSubmission(false)
     }
@@ -335,11 +340,12 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
         const response = await fetch(`${apiUrl}/sujets/${params.id}`)
 
         if (!response.ok) {
-          throw new Error(`Erreur: ${response.status}`)
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.message || `Erreur: ${response.status}`)
         }
 
         const data: Subject = await response.json()
-        console.log("Données du sujet récupérées:", data) // Pour déboguer
+        console.log("Données du sujet récupérées:", data)
         setSubject(data)
 
         // Vérifier si la date limite est dépassée
@@ -356,7 +362,11 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
         setIsLoading(false)
       } catch (err) {
         console.error("Erreur lors du chargement du sujet:", err)
-        setError("Impossible de charger les détails de l'exercice. L'API pourrait être inaccessible.")
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Impossible de charger les détails de l'exercice. L'API pourrait être inaccessible.",
+        )
         setIsLoading(false)
       }
     }
@@ -638,7 +648,13 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
               </div>
               <div className="flex items-center space-x-2">
                 <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                <span className="text-sm text-gray-600 dark:text-gray-300">Prof. Sarah Martin</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300">
+                  {subject.professeurNom && subject.professeurPrenom
+                    ? `Prof. ${subject.professeurPrenom} ${subject.professeurNom}`
+                    : subject.idProfesseur
+                      ? `Professeur ID: ${subject.idProfesseur}`
+                      : "Professeur non assigné"}
+                </span>
               </div>
             </div>
           </div>
@@ -1252,7 +1268,13 @@ export default function ExerciseDetail({ params }: { params: { id: string } }) {
                   </div>
                   <div className="ml-4">
                     <p className="text-sm font-medium text-gray-800 dark:text-white">Professeur</p>
-                    <p className="text-xs text-gray-600 dark:text-gray-400">Prof. Sarah Martin</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      {subject.professeurNom && subject.professeurPrenom
+                        ? `${subject.professeurPrenom} ${subject.professeurNom}`
+                        : subject.idProfesseur
+                          ? `ID: ${subject.idProfesseur}`
+                          : "Non assigné"}
+                    </p>
                   </div>
                 </div>
               </div>

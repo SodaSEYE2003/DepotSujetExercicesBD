@@ -57,9 +57,9 @@ model Sujet {
   TypeDeSujet  String
   DateDeDepot  DateTime    @db.Date
   Delai        DateTime    @db.Date
-  file         Bytes?      @db.LongBlob
+  file         String?      @db.LongBlob
   Titre        String?     @db.VarChar(255)
-  correctionUrl Bytes?     @db.LongBlob
+  correctionUrl String?     @db.LongBlob
   Description  String?     @db.Text
   sousTitre    String?     @db.VarChar(255)
   status       SujetStatus @default(brouillon)

@@ -313,7 +313,11 @@ router.get("/:id", (req, res) => {
 
       if (result.length === 0) {
         console.log(`Soumission avec ID ${req.params.id} non trouvée`)
-        return res.status(404).json({ error: "Soumission non trouvée" })
+        return res.status(404).json({
+          error: "Soumission non trouvée",
+          message: `La soumission avec l'ID ${req.params.id} n'existe pas dans la base de données.`,
+          code: "SUBMISSION_NOT_FOUND",
+        })
       }
 
       console.log(`Soumission avec ID ${req.params.id} trouvée:`, result[0])
@@ -554,6 +558,36 @@ router.put("/:id", upload.single("fichier"), async (req, res) => {
       console.error("Erreur lors de la mise à jour de la soumission:", error)
       res.status(500).json({ error: "Erreur serveur", details: error.message })
     }
+  })
+})
+
+// Nouvelle route pour récupérer les soumissions d'un étudiant spécifique
+router.get("/etudiant/:idEtudiant", (req, res) => {
+  const idEtudiant = req.params.idEtudiant
+  console.log(`Récupération des soumissions pour l'étudiant avec ID: ${idEtudiant}`)
+
+  // Requête SQL pour récupérer les soumissions de l'étudiant avec les informations du sujet et du professeur
+  const query = `
+    SELECT s.*, sj.Titre as sujet_titre, sj.TypeDeSujet as typeDeSujet, sj.Delai as delai,
+           u.nom as etudiant_nom, u.prenom as etudiant_prenom,
+           p.nom as professeurNom, p.prenom as professeurPrenom
+    FROM soumission s 
+    LEFT JOIN sujet sj ON s.sujet_id = sj.id 
+    LEFT JOIN utilisateur u ON s.etudiant_id = u.id 
+    LEFT JOIN utilisateur p ON sj.idProfesseur = p.id
+    WHERE s.etudiant_id = ?
+    ORDER BY s.dateSoumission DESC
+  `
+
+  db.query(query, [idEtudiant], (err, results) => {
+    if (err) {
+      console.error("Erreur lors de la récupération des soumissions de l'étudiant:", err)
+      console.error("Détails de l'erreur:", err.message, err.sql)
+      return res.status(500).json({ error: "Erreur serveur", details: err.message })
+    }
+
+    console.log(`${results.length} soumissions trouvées pour l'étudiant ${idEtudiant}`)
+    res.json(results)
   })
 })
 
